@@ -105,3 +105,7 @@ The same locked ledger reserves $1.25 for its full bound; old 3600-second jobs s
 reserve $5. Neither the cap nor existing reservations are reset. The worker shares
 the dedicated project volumes and locked uv image. See the baseline protocol for
 its data/evaluation gates and the distinction between a smoke run and useful drafting.
+
+The DFlash wrapper defines its image and volumes directly: importing another local
+entrypoint module failed in the remote worker because that file was not packaged.
+The failed `dflash-pilot-01` app was explicitly stopped; reservation retained.

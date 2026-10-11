@@ -7,8 +7,10 @@ The user deferred representation experiments until useful multi-token drafting i
 established. Implemented target-generated responses, new held-out source groups,
 random-anchor packed training, fixed feature K/V injection, cache-aware greedy
 verification, and acceptance/latency metrics that exclude the supplied anchor.
-67 local tests pass. `dflash-pilot-01` is running on a hard-bounded 900-second L40S
-worker; its reservation is $1.25, preserving the existing $200 allocation cap.
+67 local tests pass. `dflash-pilot-01` failed during remote module import and was
+stopped; the wrapper packaging was corrected. `dflash-pilot-02` is running on a
+hard-bounded 900-second L40S worker. Both $1.25 reservations are retained, bringing
+the total to $199.50/$200; the cap is unchanged.
 No successful training/quality/speed result is claimed yet. New trainer resume
 loading, larger response corpora, broad latency evaluation and test evaluation
 remain unexecuted. Historical layer/J-lens follow-ups below are deferred.
