@@ -155,3 +155,13 @@ uv run modal run modal_dflash.py --config configs/dflash-fit.json --run-id dflas
 A separate readout audit found a norm-scale difference but an essentially zero
 analytical CE lower bound. It does not establish normalization as the cause; no
 readout change was introduced on that evidence.
+
+After training finishes, evaluate both validation-selected and final checkpoints on
+every training response (up to eight fixed anchors/response, not every possible
+anchor) and the same validation responses. This checks whether the 12-prompt
+training diagnostic is representative; it does not alter checkpoint selection.
+The read-only diagnostic has a 360-second hard bound and $0.50 reservation.
+
+```bash
+uv run modal run modal_dflash.py --verify-parent dflash-fit-01 --fit-audit --run-id dflash-fit-audit-01
+```

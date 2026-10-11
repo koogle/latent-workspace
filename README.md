@@ -8,8 +8,10 @@ No backbone pretraining or collaborative proposal module.
 
 See the [DFlash baseline protocol](docs/dflash-baseline.md) for the paper/code
 comparison, data contract and predeclared evaluation. The implementation is a compact
-Qwen2 adaptation, not a full paper reproduction. Local correctness tests pass;
-the first bounded Modal validation is in progress. No new quality or speedup claim.
+Qwen2 adaptation, not a full paper reproduction. The initial 1000-update pilot did
+not produce useful drafting. A longer fit of the same baseline is running; its
+training diagnostic improves sharply while validation remains poor. No useful
+drafter or speedup is established. See [current work](OPEN_WORK.md).
 
 ## Development
 

@@ -19,7 +19,10 @@ speedup remain unestablished.
 `dflash-fit-01` is running: continue the SAME model/AdamW/RNG and exact teacher
 cache for up to 20000 additional updates (goal 21000), with a declared new cosine
 cycle. No architecture, feature-layer, mask-policy or data changes. This addresses
-underfitting before further study. A readout-scale audit found 1.13 versus target
+underfitting before further study. At update 11000 the 12-prompt training diagnostic
+reached 6.015 consecutive new matches / 7 and NLL 0.360, versus validation 0.185
+and NLL 9.078. The emerging finding is memorization without useful generalization;
+final results and an all-training-response audit are pending. A readout-scale audit found 1.13 versus target
 7.12 RMS, but its analytical CE bound is essentially zero: it does NOT establish
 a loss floor or justify calling normalization the cause.
 

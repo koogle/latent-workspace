@@ -1,5 +1,7 @@
 """Isolate verifier logic from GPU target arithmetic before further training."""
 
+import hashlib
+import json
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -8,8 +10,61 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .corpus import DOMAINS
 from .dflash import DFlashDrafter, DraftConfig, verified_generate
-from .dflash_train import greedy_generate, precision
+from .dflash_train import evaluate, greedy_generate, precision
 from .train import write_json
+
+
+def audit_fit(parent, output):
+    """Evaluate every training response at fixed anchors, without optimizer updates."""
+    parent, output = Path(parent), Path(output)
+    source_report = json.loads((parent / "report.json").read_text())
+    if not source_report.get("training_completed"):
+        raise ValueError("fit audit requires a finished training run")
+    output.mkdir(parents=True, exist_ok=False)
+    data = torch.load(parent / "teacher.pt", map_location="cpu", weights_only=True)
+    digest = hashlib.sha256()
+    for split, examples in data.items():
+        for e in examples:
+            digest.update(split.encode() + e["group"].encode() + e["tokens"].numpy().tobytes())
+    if digest.hexdigest() != source_report["teacher_sequence_sha256"]:
+        raise ValueError("teacher sequence identity mismatch")
+    cfg = DraftConfig(**source_report["config"])
+    target = (
+        AutoModelForCausalLM.from_pretrained(
+            cfg.model, revision=cfg.model_revision, dtype=torch.bfloat16, attn_implementation="sdpa"
+        )
+        .cuda()
+        .eval()
+        .requires_grad_(False)
+    )
+    draft = DFlashDrafter(target.config, cfg).cuda().eval()
+    report = {
+        "parent": str(parent),
+        "teacher_sequence_sha256": digest.hexdigest(),
+        "training_source_sha256": source_report["source_sha256"],
+        "note": "All training and validation responses, up to eight fixed anchors per response; not every possible anchor. Same BF16 evaluation as training curves. No training or test access.",
+        "checkpoints": {},
+    }
+    for name in ("best", "latest"):
+        path = parent / f"{name}.pt"
+        state = torch.load(path, map_location="cpu", weights_only=True)
+        expected_step = (
+            source_report["best_step"] if name == "best" else source_report["curve"][-1]["step"]
+        )
+        if state["step"] != expected_step:
+            raise ValueError("checkpoint step does not match report")
+        draft.load_state_dict(state["drafter"])
+        with path.open("rb") as checkpoint_file:
+            checkpoint_sha = hashlib.file_digest(checkpoint_file, "sha256").hexdigest()
+        report["checkpoints"][name] = {
+            "step": state["step"],
+            "checkpoint_sha256": checkpoint_sha,
+            "training": evaluate(draft, target, data["train"], state["mask_token_id"]),
+            "validation": evaluate(draft, target, data["validation"], state["mask_token_id"]),
+        }
+        write_json(output / "fit-audit.json", report)
+        print(f"Full-response fitting audit: {name} step {state['step']}", flush=True)
+    return report
 
 
 @torch.no_grad()
