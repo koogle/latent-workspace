@@ -61,13 +61,19 @@ def record_windows(record, tokenizer, context, block):
             )
 
 
-def build(records, tokenizer, context, block, limits):
+def build(records, tokenizer, context, block, limits, excluded_groups=(), excluded_hashes=()):
     """Collect disjoint groups first, then tokenize; exact duplicates are quarantined."""
+    excluded_groups, excluded_hashes = set(excluded_groups), set(excluded_hashes)
     pools = defaultdict(list)
     counts = defaultdict(int)
     fingerprints = {}
     duplicate_hashes = set()
     for record in records:
+        if record.split == "train" and (
+            f"{record.domain}:{record.group}" in excluded_groups
+            or record.fingerprint in excluded_hashes
+        ):
+            continue
         key = (record.split, record.domain)
         if counts[key] >= limits[record.split] * 3:
             continue
@@ -119,11 +125,16 @@ def build(records, tokenizer, context, block, limits):
     return tensors, metadata
 
 
-def prepare(cfg, tokenizer):
+def prepare(cfg, tokenizer, frozen_metadata=None):
     from datasets import load_dataset
     from huggingface_hub import HfApi
 
-    revisions = {domain: HfApi().dataset_info(repo).sha for domain, (repo, _) in SOURCES.items()}
+    revisions = {
+        domain: frozen_metadata["sources"][domain]["revision"]
+        if frozen_metadata
+        else HfApi().dataset_info(repo).sha
+        for domain, (repo, _) in SOURCES.items()
+    }
     limits = {
         "train": cfg.train_examples // 3,
         "validation": cfg.eval_examples // 3,
@@ -165,7 +176,16 @@ def prepare(cfg, tokenizer):
                     if index >= 100000:
                         break
 
-    tensors, metadata = build(records(), tokenizer, cfg.context_length, cfg.block_size, limits)
+    excluded = frozen_metadata or {"window_groups": {}, "window_hashes": {}}
+    tensors, metadata = build(
+        records(),
+        tokenizer,
+        cfg.context_length,
+        cfg.block_size,
+        limits,
+        [g for split in ("validation", "test") for g in excluded["window_groups"].get(split, [])],
+        [h for split in ("validation", "test") for h in excluded["window_hashes"].get(split, [])],
+    )
     metadata["sources"] = {
         domain: {
             "repository": SOURCES[domain][0],
@@ -176,3 +196,51 @@ def prepare(cfg, tokenizer):
     }
     metadata["dataset_revision"] = digest(json.dumps(metadata["sources"], sort_keys=True))
     return tensors, metadata
+
+
+def extend_frozen_corpus(base, candidate, target_size):
+    """Preserve held-out tensors and all previous training rows while adding data."""
+    import copy
+
+    old, old_meta = base["tensors"], base["metadata"]
+    fresh, fresh_meta = candidate
+    if old_meta["sources"] != fresh_meta["sources"]:
+        raise ValueError("corpus expansion must retain source revisions")
+    metadata = copy.deepcopy(old_meta)
+    metadata["window_groups"]["train"] = []
+    metadata["window_hashes"]["train"] = []
+    rows, priority = [], {}
+    excluded_groups = set(
+        old_meta["window_groups"]["validation"] + old_meta["window_groups"]["test"]
+    )
+    excluded_hashes = set(
+        old_meta["window_hashes"]["validation"] + old_meta["window_hashes"]["test"]
+    )
+    for domain in DOMAINS:
+        start = len(rows)
+        a, b = old_meta["domain_ranges"]["train"][domain]
+        seen = set()
+        for tensors, meta, bounds in (
+            (old, old_meta, (a, b)),
+            (fresh, fresh_meta, fresh_meta["domain_ranges"]["train"][domain]),
+        ):
+            for index in range(*bounds):
+                if len(rows) - start >= target_size // 3:
+                    break
+                group = meta["window_groups"]["train"][index]
+                fingerprint = meta["window_hashes"]["train"][index]
+                if group in excluded_groups or fingerprint in excluded_hashes:
+                    raise ValueError("expansion leaks held-out records")
+                row = tensors["train"][index]
+                key = tuple(row.tolist())
+                if tensors is fresh and key in seen:
+                    continue
+                seen.add(key)
+                rows.append(row)
+                metadata["window_groups"]["train"].append(group)
+                metadata["window_hashes"]["train"].append(fingerprint)
+        if len(rows) - start != target_size // 3:
+            raise ValueError("insufficient unique expansion rows")
+        metadata["domain_ranges"]["train"][domain] = [start, len(rows)]
+        priority[domain] = [start, start + b - a]
+    return {**old, "train": torch.stack(rows)}, metadata, priority

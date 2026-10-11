@@ -63,3 +63,18 @@ overfitting and better validation NLL with more unique data. It does not yet
 produce useful generation or establish a sufficient budget. Next: a controlled
 12,288/49,152-window comparison with longer optimization, preserving this study's
 held-out groups and revisions. This recommendation is not an executed result.
+
+## Follow-up diagnostic gate
+
+The high absolute loss and repetitive outputs require a decoder/training diagnosis
+before attributing the problem solely to dataset size. A 96-window memorization
+run uses the original training pool and frozen validation/test tensors. It records
+all-masked training accuracy as well as loss. A zero-training prefix-only baseline
+repeats Qwen's next-token distribution at every block position; its first position
+is especially useful for detecting loss of pretrained predictive information.
+
+`study_parent` reloads the parent corpus and pins its model/source revisions.
+Expansion retains every original training row, appends distinct windows, excludes
+held-out groups/content hashes and carries validation/test tensors unchanged.
+The original full-pool training order is retained as the nested subset's prefix.
+The proposed 12k/49k, 8k-update expansion is configured but gated on diagnosis.

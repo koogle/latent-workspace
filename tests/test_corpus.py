@@ -97,3 +97,44 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch):
         assert len(curve["checkpoints"]) == 2
         assert curve["checkpoints"][-1]["masked_supervised_tokens_seen"] <= 16
         assert set(curve["validation_samples"]) == set(DOMAINS)
+
+
+def test_expansion_preserves_frozen_rows_and_subset_order():
+    from latent_workspace.corpus import extend_frozen_corpus
+
+    def corpus(per_domain):
+        rows = torch.tensor([[d * 100 + i, i] for d in range(3) for i in range(per_domain)])
+        ranges = {d: [i * per_domain, (i + 1) * per_domain] for i, d in enumerate(DOMAINS)}
+        meta = {
+            "sources": {"immutable": "revision"},
+            "domain_ranges": {"train": ranges},
+            "window_groups": {
+                "train": [f"g{x[0]}" for x in rows.tolist()],
+                "validation": ["held-v"],
+                "test": ["held-t"],
+            },
+            "window_hashes": {
+                "train": [f"h{x[0]}" for x in rows.tolist()],
+                "validation": ["hash-v"],
+                "test": ["hash-t"],
+            },
+        }
+        return {"train": rows, "validation": torch.tensor([[8]]), "test": torch.tensor([[9]])}, meta
+
+    old, old_meta = corpus(2)
+    fresh, fresh_meta = corpus(4)
+    data, meta, priority_ranges = extend_frozen_corpus(
+        {"tensors": old, "metadata": old_meta}, (fresh, fresh_meta), 12
+    )
+    priority = {d: list(reversed(range(a, b))) for d, (a, b) in priority_ranges.items()}
+    subsets = nested_indices(meta["domain_ranges"]["train"], (6, 12), 42, priority)
+    expected = torch.cat([old["train"][i * 2 : (i + 1) * 2].flip(0) for i in range(3)])
+    torch.testing.assert_close(data["train"][subsets[6]], expected)
+    for split in ("validation", "test"):
+        assert data[split] is old[split]
+    assert old_meta["domain_ranges"]["train"]["code"] == [2, 4]
+    fresh_meta["window_hashes"]["train"][3] = "hash-t"
+    import pytest
+
+    with pytest.raises(ValueError, match="leaks"):
+        extend_frozen_corpus({"tensors": old, "metadata": old_meta}, (fresh, fresh_meta), 12)

@@ -12,6 +12,10 @@ selection. 35 local tests and the updated Modal mixed-data smoke passed. The fir
 [learning curves](results/data-study-01.md) completed: more data improves NLL,
 but generation remains degenerate. A sufficient budget has not been established.
 
+Current follow-up: diagnose high absolute loss using 96-window memorization
+and a zero-training repeated-Qwen-distribution baseline before scaling further.
+The 12k/49k expansion is implemented with frozen corpus lineage, but not launched.
+
 Remaining:
 - Next proposed bracket: 12,288 versus 49,152 windows, 2k/4k/8k updates.
   Reuse frozen source revisions/held-out groups; do not regenerate partitions.

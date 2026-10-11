@@ -1,25 +1,30 @@
 """Data-size/optimization learning curves; test metrics stay sealed."""
 
 import hashlib
+import json
 import time
 from pathlib import Path
 
 import torch
 
 from .backbone import FrozenBackbone
-from .corpus import DOMAINS, prepare
-from .evaluate import evaluate, generate, teacher_baseline
+from .corpus import DOMAINS, extend_frozen_corpus, prepare
+from .evaluate import evaluate, generate, repeated_next_token_baseline, teacher_baseline
 from .models import BlockHead, loss_and_logits
 from .scan import cached_metrics
 from .train import atomic_save, checkpoint, seed_all, write_json
 
 
-def nested_indices(ranges, sizes, seed):
+def nested_indices(ranges, sizes, seed, priority=None):
     generator = torch.Generator().manual_seed(seed)
     orders = {
         domain: torch.randperm(end - start, generator=generator) + start
         for domain, (start, end) in ranges.items()
     }
+    if priority:
+        for domain, first in priority.items():
+            first = torch.tensor(first, dtype=torch.long)
+            orders[domain] = torch.cat([first, orders[domain][~torch.isin(orders[domain], first)]])
     return {
         size: torch.cat([orders[domain][: size // len(DOMAINS)] for domain in DOMAINS])
         for size in sizes
@@ -39,9 +44,37 @@ def run_study(cfg, output, on_checkpoint=None):
     start = time.monotonic()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     seed_all(cfg.seed)
+    parent = None
+    if cfg.study_parent:
+        parent_path = Path(cfg.study_parent)
+        parent = json.loads((parent_path / "study.json").read_text())
+        for key in ("model", "context_length", "block_size"):
+            if cfg.to_dict()[key] != parent["config"][key]:
+                raise ValueError(f"parent corpus incompatible: {key}")
+        cfg.model_revision = parent["config"]["model_revision"]
     backbone = FrozenBackbone(cfg, device)
     cfg.model_revision = backbone.revision
-    data, metadata = prepare(cfg, backbone.tokenizer)
+    priority = None
+    if parent:
+        base = torch.load(parent_path / "corpus.pt", weights_only=True)
+        if cfg.train_examples == len(base["tensors"]["train"]):
+            data, metadata = base["tensors"], base["metadata"]
+            ranges = metadata["domain_ranges"]["train"]
+        else:
+            candidate = prepare(cfg, backbone.tokenizer, base["metadata"])
+            data, metadata, ranges = extend_frozen_corpus(base, candidate, cfg.train_examples)
+        original_order = parent["curves"][str(len(base["tensors"]["train"]))]["train_indices"]
+        priority = {}
+        for domain, (new_start, _) in ranges.items():
+            a, b = base["metadata"]["domain_ranges"]["train"][domain]
+            priority[domain] = [new_start + i - a for i in original_order if a <= i < b]
+        for split in ("validation", "test"):
+            if len(data[split]) != getattr(
+                cfg, "eval_examples" if split == "validation" else "test_examples"
+            ):
+                raise ValueError("parent held-out sizes must be preserved")
+    else:
+        data, metadata = prepare(cfg, backbone.tokenizer)
     atomic_save(output / "corpus.pt", {"tensors": data, "metadata": metadata})
     source_hash = hashlib.sha256()
     for source in sorted(Path(__file__).parent.glob("*.py")):
@@ -62,6 +95,11 @@ def run_study(cfg, output, on_checkpoint=None):
         for domain, (a, b) in metadata["domain_ranges"]["validation"].items()
     }
 
+    result["repeated_next_token_baseline"] = {
+        domain: repeated_next_token_baseline(backbone, data["validation"][a:b], cfg, device)
+        for domain, (a, b) in metadata["domain_ranges"]["validation"].items()
+    }
+
     def persist():
         write_json(output / "study.json", result)
         if on_checkpoint:
@@ -76,7 +114,9 @@ def run_study(cfg, output, on_checkpoint=None):
             if time.monotonic() - start > cfg.max_seconds:
                 raise TimeoutError("data study budget exhausted extracting features")
         memories[split] = torch.cat(chunks)
-    subsets = nested_indices(metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed)
+    subsets = nested_indices(
+        metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed, priority
+    )
     variant = cfg.variants[0]
     for size, subset in subsets.items():
         seed_all(cfg.seed)
@@ -139,6 +179,7 @@ def run_study(cfg, output, on_checkpoint=None):
                     "target_token_slots_seen": step * cfg.batch_size * cfg.block_size,
                     "masked_supervised_tokens_seen": masked_exposures,
                     "training_sample_nll_by_position": train_metric["nll_by_position"],
+                    "training_sample_accuracy_by_position": train_metric["accuracy_by_position"],
                     "validation_by_domain": by_domain,
                     "macro_validation_nll": sum(v["nll"] for v in by_domain.values())
                     / len(DOMAINS),

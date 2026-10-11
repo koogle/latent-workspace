@@ -127,3 +127,24 @@ def benchmark(head, backbone, prefix, tokens=32, repeats=3):
         "Unverified block quality; timing alone does not establish efficiency at matched quality."
     )
     return report
+
+
+@torch.no_grad()
+def repeated_next_token_baseline(backbone, data, cfg, device):
+    """Zero-training, prefix-only baseline: repeat Qwen's next-token distribution."""
+    nll = torch.zeros(cfg.block_size, device=device)
+    hits = torch.zeros_like(nll)
+    for rows in data.split(cfg.batch_size):
+        rows = rows.to(device)
+        memory, _ = backbone.encode(rows[:, : cfg.context_length])
+        final = memory[:, len(cfg.layers) - 1, -1]
+        logits = backbone.project(final).float()[:, None].expand(-1, cfg.block_size, -1)
+        target = rows[:, cfg.context_length :]
+        nll += F.cross_entropy(logits.transpose(1, 2), target, reduction="none").sum(0)
+        hits += (logits.argmax(-1) == target).sum(0)
+    return {
+        "nll": float(nll.mean() / len(data)),
+        "nll_by_position": (nll / len(data)).tolist(),
+        "accuracy_by_position": (hits / len(data)).tolist(),
+        "note": "Prefix-only; repeat the same Qwen next-token distribution at every block position. No training or target access.",
+    }

@@ -7,6 +7,7 @@ from pathlib import Path
 class Config:
     model: str = "Qwen/Qwen2.5-0.5B"
     model_revision: str = "main"
+    study_parent: str = ""
     study_sizes: tuple[int, ...] = ()
     study_checkpoints: tuple[int, ...] = (100, 500, 1000, 2000)
     evaluate_test: bool = False
