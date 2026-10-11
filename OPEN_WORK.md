@@ -34,8 +34,19 @@ Remaining:
   about the paper's J-space representation.
 - No collaborative module or native backbone pretraining in this phase.
 
-Follow-up in progress: `small-layer-controls-01`, one bounded L40S suite, 96/768/3072
-windows and four all-layer diffusion controls. Full train curves, dense checkpoints;
-no new test evaluation. Local checks: 53 tests pass. Reservations are now $197/$200
-(conservative allocations, not billed cost). Results are pending; see
-[protocol](docs/small-data-controls.md).
+Follow-up complete: [small-data layer controls](results/small-layer-controls.md).
+All 12 fits (96/768/3072 windows × baseline/dropout/null/both) reached 3200 updates,
+batch 32, on one bounded L40S job. Baseline final training accuracy:
+100%/98.9%/94.3%; every size overfits validation. At 3072 windows, best validation
+NLL is 7.264 baseline, 7.333 dropout, 7.262 null, 7.314 both. No clear gain from
+these controls; one seed and a reused small validation slice are exploratory.
+Tiny-set fitting works, but this does not establish enough data for a useful drafter
+or convergence at 3072 windows. Retain larger-data work as the generalization
+baseline; do not replace it with the tiny memorization sets.
+
+55 local tests pass, including exact dropout resume and compact feature caching.
+All four controls completed actual frozen-Qwen GPU training. Source, ordered
+subsets, split hashes, supervision counts and full-training diagnostics verified.
+All Modal work completed; cumulative reservations $197/$200, not billed usage.
+Only $3 remains under the current conservative cap, below another $5 L40S reservation.
+Checkpoints: `/runs/small-layer-controls-01/{baseline,dropout,null,dropout-null}/`.

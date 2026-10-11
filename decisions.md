@@ -32,3 +32,7 @@
   diagnostics and all-layer dropout/null-attention controls. Retain the existing
   validation slice for exploration only; do not adapt on another test evaluation.
   See [protocol](docs/small-data-controls.md).
+- 2026-10-11: Completed the small-data controls without promoting a new decoder:
+  zero-content attention is effectively tied and 25% layer dropout gives no clear
+  improvement. Tiny sets are fitting diagnostics, not replacements for the larger
+  mixed-domain training pool. Preserve this negative result and the full curves.

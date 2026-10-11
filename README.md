@@ -97,3 +97,8 @@ subset alongside validation, with denser checkpoints and 96/768/3072-window sets
 It tests all-layer conditioning, whole-layer dropout, zero-content attention, and
 both together. Learning rate remains 0.0003. Existing validation is reused for
 exploration; the earlier test has already been evaluated and is not reused here.
+
+[Completed small-data curves and control results](results/small-layer-controls.md):
+12 fits show near-complete small-set memorization followed by validation overfitting.
+Neither 25% layer dropout nor zero-content attention gives a clear validation gain
+in this one-seed diagnostic. This does not establish a sufficient final data size.
