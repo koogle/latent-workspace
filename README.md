@@ -1,3 +1,8 @@
+> **Moved to [LM Exploration](https://github.com/koogle/0-to-llm/tree/main/exploration/latent-workspace).**
+> Continued work belongs in the consolidated repository. This repository is retained
+> for historical reference; archiving is pending. See the
+> [migration notes](https://github.com/koogle/0-to-llm/blob/main/docs/consolidation.md).
+
 # Latent workspace block generation
 
 Current priority: build a **DFlash-style speculative drafter for frozen Qwen2.5-0.5B**
