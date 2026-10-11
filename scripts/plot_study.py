@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 path = Path(sys.argv[1])
 report = json.loads(path.read_text())
 report = report.get("report", report)
-fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
 for size, curve in report["curves"].items():
     rows = curve["checkpoints"]
     steps = [r["step"] for r in rows]
@@ -27,11 +27,12 @@ for ax, title in zip(axes, ("Mixed-domain validation", "Balanced training diagno
     ax.set(xlabel="Optimizer updates", ylabel="All-masked token NLL", title=title)
     ax.grid(alpha=0.2)
     ax.legend()
-fig.suptitle("Initial data-budget screening · Qwen2.5-0.5B · one seed · test sealed")
+fig.subplots_adjust(top=0.78, bottom=0.18, left=0.07, right=0.98, wspace=0.18)
+fig.suptitle("Initial data-budget screening · Qwen2.5-0.5B · one seed · test sealed", fontsize=13)
 fig.savefig(path.with_suffix(".png"), dpi=160)
 fig.savefig(path.with_suffix(".svg"))
 
-fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), constrained_layout=True, sharey=True)
+fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharey=True)
 for ax, domain in zip(axes, ("prose", "code", "translation")):
     for size, curve in report["curves"].items():
         rows = curve["checkpoints"]
@@ -45,6 +46,7 @@ for ax, domain in zip(axes, ("prose", "code", "translation")):
     ax.grid(alpha=0.2)
 axes[0].set_ylabel("Validation all-masked token NLL")
 axes[-1].legend()
-fig.suptitle("One mixed-domain drafter · validation slices · one seed · test sealed")
+fig.subplots_adjust(top=0.78, bottom=0.18, left=0.07, right=0.98, wspace=0.12)
+fig.suptitle("One mixed-domain drafter · validation slices · one seed · test sealed", fontsize=13)
 fig.savefig(path.with_name(path.stem + "-domains.png"), dpi=160)
 fig.savefig(path.with_name(path.stem + "-domains.svg"))

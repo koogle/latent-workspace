@@ -51,3 +51,7 @@ uv run modal run modal_app.py --config configs/data-study.json --run-id data-stu
 Additional reference: Chen et al., [DFlash: Block Diffusion for Flash Speculative
 Decoding](https://arxiv.org/abs/2602.06036), [official code](https://github.com/z-lab/dflash).
 This prototype does not reproduce its verifier or lossless speedup claims.
+
+The [first measured data-budget curves](results/data-study-01.md) are available:
+more data improved validation loss, but sample generations remain degenerate.
+No sufficient training budget or useful drafter quality is established yet.

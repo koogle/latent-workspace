@@ -55,3 +55,11 @@ Do not interpret ground-truth agreement as speculative acceptance rate.
 Layer scans, all-layer attention, J-lens ablations and larger Qwen models remain
 next-stage experiments. This first study does not establish minimum data needs,
 quality parity, lossless decoding or a speed advantage.
+
+## First measured outcome
+
+[The completed L40S study](../results/data-study-01.md) shows smaller-set
+overfitting and better validation NLL with more unique data. It does not yet
+produce useful generation or establish a sufficient budget. Next: a controlled
+12,288/49,152-window comparison with longer optimization, preserving this study's
+held-out groups and revisions. This recommendation is not an executed result.

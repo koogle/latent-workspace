@@ -38,5 +38,6 @@ All three paths (final, all extracted layers, J-lens) completed five updates;
 test metrics remain sealed. This is plumbing verification only.
 
 `data-study-01` compares nested data subsets at equal optimization checkpoints.
-Results will be published after the bounded run completes. See
-[protocol](../docs/data-budget.md); this study precedes any broad model sweep.
+[Measured results and curves](data-study-01.md): validation NLL at 2k updates
+is 9.65/7.80/7.52 for 768/3,072/12,288 windows. Generation remains repetitive;
+test remains sealed. See [protocol](../docs/data-budget.md).
