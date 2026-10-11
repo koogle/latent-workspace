@@ -36,3 +36,18 @@ are retained in the repository.
 See [experiment protocol](docs/experiment.md), [knowledge index](docs/knowledge/INDEX.md),
 and [open work](OPEN_WORK.md). All dependencies and files belong to this project;
 it has no connection to the Age of Agents game.
+
+## Current gate: training-data sufficiency
+
+The initial WikiText pilot did not produce useful generation. Before scaling,
+run the [mixed-domain learning-curve study](docs/data-budget.md): nested dataset
+sizes at matched update budgets, per-domain validation, and a sealed test set.
+
+```bash
+uv run modal run modal_app.py --config configs/mixed-smoke.json --run-id mixed-smoke-01
+uv run modal run modal_app.py --config configs/data-study.json --run-id data-study-01
+```
+
+Additional reference: Chen et al., [DFlash: Block Diffusion for Flash Speculative
+Decoding](https://arxiv.org/abs/2602.06036), [official code](https://github.com/z-lab/dflash).
+This prototype does not reproduce its verifier or lossless speedup claims.

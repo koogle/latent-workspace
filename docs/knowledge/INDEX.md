@@ -8,3 +8,5 @@
 
 Consult → work → learn/update → continue. Keep references and verification limits
 in the owning guide, not only in conversation.
+
+Training budget and learning-curve decisions: [Data sufficiency](../data-budget.md).

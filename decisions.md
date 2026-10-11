@@ -7,3 +7,11 @@
 - 2026-10-11: Independent private repository, direct main commits, regular pushes,
   uv dependency management, and an AGENTS.md documentation workflow adapted from
   Age of Agents, as requested by the user.
+- 2026-10-11: User requires distinct train/validation/test data and separate code,
+  translation and prose reporting. Extend the exploration to pretrained Qwen
+  checkpoints through approximately 1B parameters; do not treat cross-family
+  comparisons as pure parameter-count scaling.
+- 2026-10-11: Train one shared drafter on all three domains; domain categories
+  define evaluation slices, not isolated domain training. Keep test sealed during
+  budget selection. Prioritize data-size/optimization learning curves before
+  the expanded conditioning and model-size sweep.

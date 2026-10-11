@@ -33,7 +33,12 @@ def execute(config, run_id, resume_from):
     cfg = Config(**config).validate()
     output = f"/runs/{resume_from or run_id}"
     try:
-        report = run(cfg, output, resume=bool(resume_from), on_checkpoint=runs.commit)
+        if cfg.study_sizes:
+            from latent_workspace.study import run_study
+
+            report = run_study(cfg, output, on_checkpoint=runs.commit)
+        else:
+            report = run(cfg, output, resume=bool(resume_from), on_checkpoint=runs.commit)
         return {"run_id": run_id, "output": output, "report": report}
     finally:
         runs.commit()

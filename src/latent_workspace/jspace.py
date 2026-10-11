@@ -16,7 +16,7 @@ def fit_jacobians(backbone, prefixes, *, deadline, checkpoint_path=None, on_chec
     cfg = backbone.cfg
     model = backbone.model.model
     hidden = backbone.hidden_size
-    sources = cfg.layers[:-1]
+    sources = [i for i in (cfg.selected_layers or cfg.layers[:-1]) if i != cfg.layers[-1]]
     sums = {i: torch.zeros(hidden, hidden) for i in sources}
     counts = 0
     if checkpoint_path and Path(checkpoint_path).exists():
@@ -25,6 +25,7 @@ def fit_jacobians(backbone, prefixes, *, deadline, checkpoint_path=None, on_chec
             raise ValueError("J-lens calibration layers mismatch")
         sums, counts = saved["sums"], saved["counts"]
     for ids in prefixes[counts : cfg.jspace_prompts]:
+        ids = ids[ids >= 0]
         if time.monotonic() > deadline:
             raise TimeoutError("time budget exhausted fitting J-lens")
         captures, hooks = {}, []
@@ -82,7 +83,7 @@ def fit_jacobians(backbone, prefixes, *, deadline, checkpoint_path=None, on_chec
         finally:
             for hook in hooks:
                 hook.remove()
-    matrices = [sums[i] / counts for i in sources] + [torch.eye(hidden)]
+    matrices = [sums[i] / counts if i in sums else torch.eye(hidden) for i in cfg.layers]
     return torch.stack(matrices)
 
 
@@ -98,7 +99,11 @@ def readout(backbone, residual):
     weight = backbone.model.get_output_embeddings().weight
     outputs = []
     # Bound vocabulary-logit peak memory to one depth and token position.
+    active = set(backbone.cfg.selected_layers or backbone.cfg.layers)
     for depth in range(mapped.shape[1]):
+        if backbone.cfg.layers[depth] not in active:
+            outputs.append(torch.zeros_like(residual[:, depth]))
+            continue
         positions = []
         for position in range(mapped.shape[2]):
             normalized = backbone.model.model.norm(mapped[:, depth, position].to(weight.dtype))

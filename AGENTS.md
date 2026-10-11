@@ -48,3 +48,13 @@ docs/operations.md run procedures; results/ measured evidence. Preserve unresolv
 work. Label proposals, implemented behavior and executed verification distinctly.
 Never store secrets or raw conversation dumps. Documentation updates within the
 authorized work do not require separate approval.
+
+## Expanded evaluation requirement (2026-10-11)
+
+Maintain separate train/validation/test partitions for prose, code and translation.
+Split code by repository, not file/window; deduplicate normalized content across
+partitions. Use paired translation data with loss only on target-language tokens.
+Use validation for model/layer choices; keep test metrics unread until choices
+and trained checkpoints are frozen. Report domains and Qwen sizes separately.
+The requested size sweep reaches approximately 1B parameters, retaining frozen
+pretrained backbones. Record architecture/tokenizer differences across families.

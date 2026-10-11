@@ -7,6 +7,14 @@ from pathlib import Path
 class Config:
     model: str = "Qwen/Qwen2.5-0.5B"
     model_revision: str = "main"
+    study_sizes: tuple[int, ...] = ()
+    study_checkpoints: tuple[int, ...] = (100, 500, 1000, 2000)
+    evaluate_test: bool = False
+    scan_steps: int = 0
+    select_layers_by_probe: bool = False
+    selected_layer_count: int = 3
+    corpus: str = "wikitext"
+    test_examples: int = 384
     dataset: str = "Salesforce/wikitext"
     dataset_config: str = "wikitext-103-raw-v1"
     dataset_revision: str = "main"
@@ -43,6 +51,18 @@ class Config:
     )
 
     def validate(self):
+        if self.study_sizes and (
+            any(n <= 0 or n % 3 or n > self.train_examples for n in self.study_sizes)
+            or not self.study_checkpoints
+            or min(self.study_checkpoints) <= 0
+        ):
+            raise ValueError("invalid learning-curve sizes or checkpoints")
+        if self.corpus not in ("wikitext", "mixed"):
+            raise ValueError("unknown corpus")
+        if self.corpus == "mixed" and any(
+            x < 3 or x % 3 for x in (self.train_examples, self.eval_examples, self.test_examples)
+        ):
+            raise ValueError("mixed split window counts must be positive multiples of three")
         for key in (
             "jspace_prompts",
             "jspace_top_k",
@@ -87,6 +107,9 @@ class Config:
             elif kind not in ("parallel", "diffusion") or condition not in (
                 "final",
                 "multi",
+                "all",
+                "attention_all",
+                "best",
                 "attention_multi",
                 "jspace",
                 *[f"layer{i}" for i in self.layers],
@@ -101,7 +124,7 @@ class Config:
     @classmethod
     def load(cls, path):
         values = json.loads(Path(path).read_text())
-        for key in ("layers", "selected_layers", "variants"):
+        for key in ("layers", "selected_layers", "variants", "study_sizes", "study_checkpoints"):
             if key in values:
                 values[key] = tuple(values[key])
         return cls(**values).validate()

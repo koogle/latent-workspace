@@ -68,6 +68,13 @@ class BlockHead(nn.Module):
             ]
             if self.condition == "final":
                 memory = memory[:, depth - 1 : depth]
+            elif self.condition == "all":
+                memory = memory[:, :depth]
+            elif self.condition == "attention_all":
+                memory = memory[:, depth : 2 * depth]
+            elif self.condition == "best":
+                index = selected[0]
+                memory = memory[:, index : index + 1]
             elif self.condition == "multi":
                 memory = memory[:, selected]
             elif self.condition == "attention_multi":

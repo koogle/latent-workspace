@@ -63,12 +63,12 @@ def test_exact_jacobian_matches_direct_autograd():
     values = {}
 
     def first(module, args, output):
-        h = output[0].detach().requires_grad_(True)
+        h = (output[0] if isinstance(output, tuple) else output).detach().requires_grad_(True)
         values[1] = h
-        return (h, *output[1:])
+        return (h, *output[1:]) if isinstance(output, tuple) else h
 
     def last(module, args, output):
-        values[2] = output[0]
+        values[2] = output[0] if isinstance(output, tuple) else output
 
     handles = [
         backbone.model.model.layers[0].register_forward_hook(first),
@@ -92,3 +92,18 @@ def test_exact_jacobian_matches_direct_autograd():
     assert memory.shape == (1, 6, 3, 8)
     assert torch.isfinite(readout(backbone, memory[:, :2])).all()
     assert all(p.grad is None for p in backbone.parameters())
+
+
+def test_frozen_readout_matches_teacher_and_padding_cache():
+    backbone = tiny_backbone()
+    prefix = torch.randint(31, (1, 24))
+    memory, _ = backbone.encode(prefix)
+    logits = backbone.model(prefix).logits[:, -1]
+    torch.testing.assert_close(backbone.project(memory[:, 1, -1]), logits)
+    padded = torch.cat([torch.full((1, 5), -1), prefix], -1)
+    padded_memory, cache = backbone.encode(padded)
+    torch.testing.assert_close(padded_memory, memory, atol=1e-5, rtol=1e-5)
+    block = torch.randint(31, (1, 4))
+    incremental, _ = backbone.encode(block, past_key_values=cache)
+    full, _ = backbone.encode(torch.cat([prefix, block], -1))
+    torch.testing.assert_close(incremental, full, atol=1e-5, rtol=1e-5)

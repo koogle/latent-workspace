@@ -1,20 +1,20 @@
 # Open work
 
-## Current state
+Private repo: koogle/latent-workspace, main; direct commits and regular pushes authorized.
 
-Pushed to private `koogle/latent-workspace` on main (direct commits authorized).
-Frozen Qwen extraction, four-token denoising, J-lens conditioning, selected raw
-residual/attention conditions, data splits, checkpoints and uv/Modal runner work.
-The first seven-condition L40S smoke and 21.63M-parameter L40S/H100 profiles
-completed. See results/README.md for measurements and limits.
+The original seven-condition WikiText pilot completed but generated repeated
+punctuation. See results/pilot-l40s-01.md. It is not evidence of useful generation.
 
-`pilot-l40s-01` is running on L40S: 100-prefix lens fit and seven conditions,
-750 updates each, 10.75M total context-token exposures if completed. No trained
-quality result is claimed before it finishes.
+Current gate: [data sufficiency study](docs/data-budget.md). Implemented mixed
+prose/code/translation training, disjoint grouped train/validation/test partitions,
+nested data-size learning curves, actual masked-supervision counts and sealed-test
+selection. Local checks pass; updated Modal mixed-data smoke and learning curves
+must be measured before selecting a training budget.
 
-## Next
-
-- Finish pilot, inspect errors/metrics/samples, and push measured evidence.
-- Run final validation and check checkpoint retrieval.
-- Multi-seed, untouched-test and reasoning-task evaluation remain future research.
-- No collaborative generation or native pretraining in this phase.
+Remaining:
+- Run and analyze the learning curves; extend brackets/optimization if warranted.
+- Tiny-set memorization and multi-seed confirmation before a definitive budget.
+- Layer-information scan and selected/all-layer ablations after useful training.
+- Qwen3-0.6B-Base / Qwen3.5-0.8B-Base adapters need real-model verification.
+- Larger validation sets, near-duplicate audit and final untouched-test evaluation.
+- No collaborative proposal module or native backbone pretraining in this phase.

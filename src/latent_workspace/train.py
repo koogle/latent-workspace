@@ -46,6 +46,12 @@ def checkpoint(path, head, optimizer, step, cfg, backbone, generator):
     tmp.replace(path)
 
 
+def atomic_save(path, value):
+    temporary = path.with_suffix(".tmp")
+    torch.save(value, temporary)
+    temporary.replace(path)
+
+
 def run(cfg, output, *, resume=False, on_checkpoint=None):
     cfg.validate()
     output = Path(output)
@@ -67,14 +73,29 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         cfg.dataset_revision = old["data"]["dataset_revision"]
         if old.get("source_sha256") != source_digest:
             raise ValueError("source changed since checkpoint; resume requires identical code")
+        if cfg.select_layers_by_probe:
+            cfg.selected_layers = tuple(old["config"]["selected_layers"])
         comparable = json.loads(json.dumps(cfg.to_dict()))
         if comparable != old["config"]:
             raise ValueError("resume config differs from saved config")
-    train, valid, data_info = load_data(cfg, backbone.tokenizer)
+    test = None
+    if cfg.corpus == "mixed":
+        from .corpus import prepare
+
+        data_path = output / "corpus.pt"
+        if resume and data_path.exists():
+            stored = torch.load(data_path, weights_only=True)
+            tensors, data_info = stored["tensors"], stored["metadata"]
+        else:
+            tensors, data_info = prepare(cfg, backbone.tokenizer)
+            atomic_save(data_path, {"tensors": tensors, "metadata": data_info})
+        train, valid, test = tensors["train"], tensors["validation"], tensors["test"]
+    else:
+        train, valid, data_info = load_data(cfg, backbone.tokenizer)
     cfg.dataset_revision = data_info["dataset_revision"]
-    calibration_indices = torch.randperm(
-        len(train), generator=torch.Generator().manual_seed(cfg.seed + 1)
-    )[: cfg.jspace_prompts]
+    eligible = (train[:, : cfg.context_length].ge(0).sum(-1) >= 18).nonzero().flatten()
+    order = torch.randperm(len(eligible), generator=torch.Generator().manual_seed(cfg.seed + 1))
+    calibration_indices = eligible[order[: cfg.jspace_prompts]]
     manifest = {
         "config": cfg.to_dict(),
         "source_sha256": source_digest,
@@ -84,33 +105,17 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         "device": device,
         "torch": torch.__version__,
         "gpu": torch.cuda.get_device_name() if device == "cuda" else None,
+        "output_readout": "frozen backbone final RMSNorm + unembedding",
     }
     write_json(output / "manifest.json", manifest)
-    if on_checkpoint:
-        on_checkpoint()
-    if any(v.endswith(":jspace") for v in cfg.variants):
-        from .jspace import fit_jacobians
 
-        lens_path = output / "jacobians.pt"
-        if resume and lens_path.exists():
-            backbone.jacobians = torch.load(lens_path, weights_only=True)
-        else:
-            backbone.jacobians = fit_jacobians(
-                backbone,
-                train[calibration_indices, : min(128, cfg.context_length)],
-                deadline=started + cfg.max_seconds,
-                checkpoint_path=output / "jacobian-calibration.pt",
-                on_checkpoint=on_checkpoint,
-            )
-            torch.save(backbone.jacobians, lens_path)
+    def persist():
         if on_checkpoint:
             on_checkpoint()
-    report = {
-        "manifest": manifest,
-        "variants": {},
-        "teacher": teacher_baseline(backbone, valid, cfg, device),
-    }
+
+    persist()
     cache_path = output / "features.pt"
+    backbone.conditioning = "raw"
     if resume and cache_path.exists():
         cache = torch.load(cache_path, weights_only=True)
     else:
@@ -121,8 +126,64 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
             if time.monotonic() - started > cfg.max_seconds:
                 raise TimeoutError("time budget exhausted during extraction")
         cache = torch.cat(chunks)
-        torch.save(cache, cache_path)
+        atomic_save(cache_path, cache)
         del chunks
+    report = {
+        "manifest": manifest,
+        "variants": {},
+        "teacher": teacher_baseline(backbone, valid, cfg, device),
+    }
+    if cfg.scan_steps:
+        from .scan import layer_scan
+
+        scan_path = output / "layer-scan.json"
+        if resume and scan_path.exists():
+            scan = json.loads(scan_path.read_text())
+        else:
+            valid_memory = torch.cat(
+                [
+                    backbone.encode(batch[:, : cfg.context_length].to(device))[0].cpu()
+                    for batch in valid.split(cfg.batch_size)
+                ]
+            )
+            scan = layer_scan(
+                backbone,
+                cache,
+                train[:, cfg.context_length :],
+                valid_memory,
+                valid[:, cfg.context_length :],
+                cfg,
+                device,
+                started + cfg.max_seconds,
+            )
+            write_json(scan_path, scan)
+        report["layer_scan"] = scan
+        if cfg.select_layers_by_probe:
+            cfg.selected_layers = tuple(scan["intermediate_ranking"][: cfg.selected_layer_count])
+            manifest["config"] = cfg.to_dict()
+            write_json(output / "manifest.json", manifest)
+        persist()
+    if any(v.endswith(":jspace") for v in cfg.variants):
+        from .jspace import fit_jacobians, readout
+
+        lens_path = output / "jacobians.pt"
+        if resume and lens_path.exists():
+            backbone.jacobians = torch.load(lens_path, weights_only=True)
+        else:
+            backbone.jacobians = fit_jacobians(
+                backbone,
+                train[calibration_indices, : cfg.context_length],
+                deadline=started + cfg.max_seconds,
+                checkpoint_path=output / "jacobian-calibration.pt",
+                on_checkpoint=on_checkpoint,
+            )
+            atomic_save(lens_path, backbone.jacobians)
+        chunks = []
+        for memory in cache.split(cfg.batch_size):
+            chunks.append(readout(backbone, memory[:, : len(cfg.layers)].to(device)).cpu())
+        cache = torch.cat([cache, torch.cat(chunks)], dim=1)
+        del chunks
+        persist()
     report["feature_cache_bytes"] = cache.numel() * cache.element_size()
     for variant in cfg.variants:
         if time.monotonic() - started > cfg.max_seconds:
@@ -195,6 +256,11 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         result["latency"] = benchmark(
             head, backbone, valid[:1, : cfg.context_length].to(device), tokens=16
         )
+        if cfg.corpus == "mixed":
+            result["validation_by_domain"] = {
+                domain: evaluate(head, backbone, valid[start:end], cfg, device)
+                for domain, (start, end) in data_info["domain_ranges"]["validation"].items()
+            }
         result["samples"] = []
         for prompt in ("The capital of France is", "Once upon a time"):
             prefix = backbone.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
@@ -221,6 +287,41 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         del optimizer, head
         if device == "cuda":
             torch.cuda.empty_cache()
+    if (
+        test is not None
+        and len(report["variants"]) == len(cfg.variants)
+        and all(value["completed"] for value in report["variants"].values())
+    ):
+        winner = min(report["variants"], key=lambda key: report["variants"][key]["held_out"]["nll"])
+        report["selection_frozen_before_test"] = {
+            "winner": winner,
+            "criterion": "macro validation NLL",
+        }
+        write_json(output / "selection.json", report["selection_frozen_before_test"])
+        persist()
+        # Open test labels only for the predeclared final-layer reference and
+        # validation-selected winner; no configuration choices use test metrics.
+        if cfg.evaluate_test:
+            report["test_by_domain"] = {}
+            for variant in dict.fromkeys(["diffusion:final", winner]):
+                if variant not in report["variants"]:
+                    continue
+                state = torch.load(
+                    output / (variant.replace(":", "-") + ".pt"),
+                    map_location=device,
+                    weights_only=True,
+                )
+                head = BlockHead(backbone.hidden_size, cfg, variant).to(device)
+                head.load_state_dict(state["head"])
+                report["test_by_domain"][variant] = {
+                    domain: evaluate(head, backbone, test[start:end], cfg, device)
+                    for domain, (start, end) in data_info["domain_ranges"]["test"].items()
+                }
+                del head
+        else:
+            report["test_status"] = (
+                "sealed: data-budget and configuration selection still in progress"
+            )
     report["elapsed_seconds"] = time.monotonic() - started
     report["peak_gpu_bytes"] = torch.cuda.max_memory_allocated() if device == "cuda" else None
     write_json(output / "results.json", report)

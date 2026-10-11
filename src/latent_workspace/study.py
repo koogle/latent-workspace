@@ -1,0 +1,155 @@
+"""Data-size/optimization learning curves; test metrics stay sealed."""
+
+import hashlib
+import time
+from pathlib import Path
+
+import torch
+
+from .backbone import FrozenBackbone
+from .corpus import DOMAINS, prepare
+from .evaluate import evaluate
+from .models import BlockHead, loss_and_logits
+from .scan import cached_metrics
+from .train import atomic_save, checkpoint, seed_all, write_json
+
+
+def nested_indices(ranges, sizes, seed):
+    generator = torch.Generator().manual_seed(seed)
+    orders = {
+        domain: torch.randperm(end - start, generator=generator) + start
+        for domain, (start, end) in ranges.items()
+    }
+    return {
+        size: torch.cat([orders[domain][: size // len(DOMAINS)] for domain in DOMAINS])
+        for size in sizes
+    }
+
+
+def run_study(cfg, output, on_checkpoint=None):
+    cfg.validate()
+    if cfg.corpus != "mixed" or len(cfg.variants) != 1 or cfg.evaluate_test:
+        raise ValueError(
+            "data study requires mixed training, one fixed variant and a sealed test set"
+        )
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    if (output / "study.json").exists():
+        raise ValueError("study already exists; use a new run ID")
+    start = time.monotonic()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    seed_all(cfg.seed)
+    backbone = FrozenBackbone(cfg, device)
+    cfg.model_revision = backbone.revision
+    data, metadata = prepare(cfg, backbone.tokenizer)
+    atomic_save(output / "corpus.pt", {"tensors": data, "metadata": metadata})
+    source_hash = hashlib.sha256()
+    for source in sorted(Path(__file__).parent.glob("*.py")):
+        source_hash.update(source.name.encode() + source.read_bytes())
+    result = {
+        "config": cfg.to_dict(),
+        "data": metadata,
+        "source_sha256": source_hash.hexdigest(),
+        "test_status": "sealed; no test losses or accuracy computed",
+        "curves": {},
+        "readout_norm_weight_rms": float(
+            backbone.model.model.norm.weight.float().square().mean().sqrt()
+        ),
+    }
+
+    def persist():
+        write_json(output / "study.json", result)
+        if on_checkpoint:
+            on_checkpoint()
+
+    persist()
+    memories = {}
+    for split in ("train", "validation"):
+        chunks = []
+        for rows in data[split].split(cfg.batch_size):
+            chunks.append(backbone.encode(rows[:, : cfg.context_length].to(device))[0].cpu())
+            if time.monotonic() - start > cfg.max_seconds:
+                raise TimeoutError("data study budget exhausted extracting features")
+        memories[split] = torch.cat(chunks)
+    subsets = nested_indices(metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed)
+    variant = cfg.variants[0]
+    for size, subset in subsets.items():
+        seed_all(cfg.seed)
+        head = BlockHead(backbone.hidden_size, cfg, variant).to(device)
+        optimizer = torch.optim.AdamW(head.parameters(), lr=cfg.learning_rate, weight_decay=0.01)
+        sampler = torch.Generator().manual_seed(cfg.seed)
+        selected = data["train"][subset]
+        memory = memories["train"][subset]
+        per_domain = size // len(DOMAINS)
+        diagnostic_indices = torch.cat(
+            [
+                torch.arange(i * per_domain, i * per_domain + min(32, per_domain))
+                for i in range(len(DOMAINS))
+            ]
+        )
+        masked_exposures = 0
+        curve = {
+            "unique_blocks": size,
+            "unique_target_token_slots": size * cfg.block_size,
+            "train_indices": subset.tolist(),
+            "checkpoints": [],
+        }
+        result["curves"][str(size)] = curve
+        for step in range(1, max(cfg.study_checkpoints) + 1):
+            if time.monotonic() - start > cfg.max_seconds:
+                result["stopped"] = "time budget; incomplete curves"
+                persist()
+                return result
+            head.train()
+            index = torch.randint(size, (cfg.batch_size,), generator=sampler)
+            optimizer.zero_grad(set_to_none=True)
+            loss, _, mask = loss_and_logits(
+                head,
+                backbone,
+                memory[index].to(device),
+                selected[index, cfg.context_length :].to(device),
+            )
+            if not torch.isfinite(loss):
+                raise FloatingPointError("nonfinite study loss")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0)
+            optimizer.step()
+            masked_exposures += int(mask.sum())
+            if step in cfg.study_checkpoints:
+                train_metric = cached_metrics(
+                    head,
+                    backbone,
+                    memory[diagnostic_indices],
+                    selected[diagnostic_indices, cfg.context_length :],
+                    cfg,
+                    device,
+                )
+                by_domain = {}
+                for domain, (a, b) in metadata["domain_ranges"]["validation"].items():
+                    by_domain[domain] = evaluate(
+                        head, backbone, data["validation"][a:b], cfg, device
+                    )
+                row = {
+                    "step": step,
+                    "target_token_slots_seen": step * cfg.batch_size * cfg.block_size,
+                    "masked_supervised_tokens_seen": masked_exposures,
+                    "training_sample_nll_by_position": train_metric["nll_by_position"],
+                    "validation_by_domain": by_domain,
+                    "macro_validation_nll": sum(v["nll"] for v in by_domain.values())
+                    / len(DOMAINS),
+                }
+                curve["checkpoints"].append(row)
+                checkpoint(
+                    output / f"size-{size}.pt", head, optimizer, step, cfg, backbone, sampler
+                )
+                result["elapsed_seconds"] = time.monotonic() - start
+                persist()
+                print(
+                    f"Data study size={size} step={step} validation_nll={row['macro_validation_nll']:.4f} supervised_tokens={masked_exposures}",
+                    flush=True,
+                )
+        del head, optimizer, memory
+    result["completed"] = True
+    result["elapsed_seconds"] = time.monotonic() - start
+    persist()
+    return result

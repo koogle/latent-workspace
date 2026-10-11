@@ -94,8 +94,8 @@ def benchmark(head, backbone, prefix, tokens=32, repeats=3):
 
     def ar():
         return backbone.model.generate(
-            prefix,
-            attention_mask=torch.ones_like(prefix),
+            prefix.clamp(min=0),
+            attention_mask=prefix.ge(0).long(),
             max_new_tokens=tokens,
             min_new_tokens=tokens,
             do_sample=False,

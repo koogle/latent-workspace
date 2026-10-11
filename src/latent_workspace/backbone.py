@@ -7,20 +7,26 @@ from torch import nn
 class FrozenBackbone(nn.Module):
     def __init__(self, cfg, device="cuda"):
         super().__init__()
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Qwen3_5ForCausalLM
 
         self.cfg = cfg
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg.model, revision=cfg.model_revision)
+        model_config = AutoConfig.from_pretrained(cfg.model, revision=cfg.model_revision)
+        loader = (
+            Qwen3_5ForCausalLM if model_config.model_type == "qwen3_5" else AutoModelForCausalLM
+        )
         self.model = (
-            AutoModelForCausalLM.from_pretrained(
+            loader.from_pretrained(
                 cfg.model,
-                revision=cfg.model_revision,
-                torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+                revision=model_config._commit_hash,
+                dtype=torch.bfloat16 if device == "cuda" else torch.float32,
                 attn_implementation="sdpa",
             )
             .to(device)
             .eval()
             .requires_grad_(False)
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            cfg.model, revision=model_config._commit_hash
         )
         self.hidden_size = self.model.config.hidden_size
         if max(cfg.layers) != self.model.config.num_hidden_layers:
@@ -47,10 +53,22 @@ class FrozenBackbone(nn.Module):
             for index in self.cfg.layers:
                 layer = self.model.model.layers[index - 1]
                 hooks.append(layer.register_forward_hook(capture(residuals, index)))
-                hooks.append(layer.self_attn.register_forward_hook(capture(attentions, index)))
+                attention = getattr(layer, "self_attn", getattr(layer, "linear_attn", None))
+                hooks.append(attention.register_forward_hook(capture(attentions, index)))
+            mask = prefix.ge(0).long()
+            if past_key_values is not None:
+                previous = getattr(past_key_values, "latent_attention_mask", None)
+                if previous is not None:
+                    mask = torch.cat([previous, mask], dim=-1)
+            positions = (mask.cumsum(-1) - 1).clamp(min=0)[:, -prefix.shape[1] :]
             out = self.model.model(
-                input_ids=prefix, use_cache=True, past_key_values=past_key_values
+                input_ids=prefix.clamp(min=0),
+                attention_mask=mask,
+                position_ids=positions,
+                use_cache=True,
+                past_key_values=past_key_values,
             )
+            out.past_key_values.latent_attention_mask = mask
         finally:
             for hook in hooks:
                 hook.remove()
@@ -70,9 +88,11 @@ class FrozenBackbone(nn.Module):
     def project(self, features):
         # Frozen weights, but preserve gradients to the trainable head.
         weight = self.model.get_output_embeddings().weight
-        return torch.nn.functional.linear(features.to(weight.dtype), weight)
+        return torch.nn.functional.linear(self.model.model.norm(features.to(weight.dtype)), weight)
 
     @torch.no_grad()
     def teacher_logits(self, prefix, target):
         joined = torch.cat([prefix, target[:, :-1]], dim=1)
-        return self.model(joined, use_cache=False).logits[:, prefix.shape[1] - 1 :]
+        return self.model(
+            joined.clamp(min=0), attention_mask=joined.ge(0).long(), use_cache=False
+        ).logits[:, prefix.shape[1] - 1 :]

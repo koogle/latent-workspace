@@ -1,0 +1,57 @@
+# Drafter data budget: research and first learning curves
+
+## What is known
+
+The first WikiText pilot supplied each decoder only 24,000 target-token slots
+(750 updates × 8 examples × 4 tokens). Context exposures are not output labels;
+random masking further reduces the number of supervised positions. Its repeated
+punctuation and high held-out loss do not establish a representation limitation.
+The readout now includes Qwen's frozen final normalization, with a regression
+check against actual Qwen logits. Historical results used the earlier readout.
+
+[DFlash](https://arxiv.org/html/2602.06036v2) is a close architectural reference:
+it conditions a lightweight diffusion drafter on multiple target hidden features,
+shares frozen embeddings/output weights, and uses target verification. Its
+training distribution and verification objective differ from our standalone
+four-token generator. Published sequence counts cannot be converted directly into
+our number of supervised four-token blocks. We therefore measure learning curves
+before choosing a full training budget or attempting a broad conditioning sweep.
+
+## Controlled initial experiment
+
+Use frozen Qwen2.5-0.5B, one fixed diffusion decoder and selected residual layers.
+Train every model on an equal mix of prose, code and English-to-German translation.
+Nested training subsets contain 768, 3,072 and 12,288 unique four-token windows.
+Each starts from identical initialization and gets 100/500/1,000/2,000 update
+checkpoints, batch size 16. At the final checkpoint each sees 128,000 target slots;
+record the actual masked positions receiving loss separately. Compare dataset
+sizes at equal updates, and optimization progress within each dataset size.
+
+The subsets are exploratory brackets, not a claim that 12,288 windows suffice.
+Validation has 64 windows per domain; test has another 64 per domain and remains
+sealed. These are small screening samples, unsuitable for definitive significance
+claims. Split prose by official article partition, code by repository hash, and
+translation by official partition with source deduplication. Quarantine normalized
+exact duplicates; near-duplicate and pretrained-model contamination are unresolved.
+
+Report per-domain all-masked token NLL, per-position accuracy, iterative block
+accuracy, and a balanced training diagnostic. Train on human corpus targets in
+this first study. Target-generated continuations/distillation should be a separate
+controlled follow-up if agreement with Qwen is the intended drafting objective.
+Do not interpret ground-truth agreement as speculative acceptance rate.
+
+## Decisions after measurement
+
+- If training and validation loss still improve with updates, extend optimization
+  before concluding that unique data is insufficient.
+- If more unique data helps at equal updates, expand the largest bracket by 4×.
+- If training improves while validation stalls, prioritize diversity/data volume.
+- If even training loss stalls at poor quality, test tiny-set memorization,
+  readout calibration, learning rate and conditioning before buying more data.
+- Once curves approach a practical plateau, repeat the candidate budget with
+  three seeds and larger validation partitions. Select a budget using validation,
+  freeze the protocol, then evaluate untouched test once.
+
+Layer scans, all-layer attention, J-lens ablations and larger Qwen models remain
+next-stage experiments. This first study does not establish minimum data needs,
+quality parity, lossless decoding or a speed advantage.
