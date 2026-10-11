@@ -6,19 +6,25 @@ training token IDs directly and uses one-based post-block residual indices.
 """
 
 import time
+from pathlib import Path
 
 import torch
 from torch.nn import functional as F
 
 
-def fit_jacobians(backbone, prefixes, *, deadline):
+def fit_jacobians(backbone, prefixes, *, deadline, checkpoint_path=None, on_checkpoint=None):
     cfg = backbone.cfg
     model = backbone.model.model
     hidden = backbone.hidden_size
     sources = cfg.layers[:-1]
     sums = {i: torch.zeros(hidden, hidden) for i in sources}
     counts = 0
-    for ids in prefixes[: cfg.jspace_prompts]:
+    if checkpoint_path and Path(checkpoint_path).exists():
+        saved = torch.load(checkpoint_path, weights_only=True)
+        if saved["layers"] != list(cfg.layers):
+            raise ValueError("J-lens calibration layers mismatch")
+        sums, counts = saved["sums"], saved["counts"]
+    for ids in prefixes[counts : cfg.jspace_prompts]:
         if time.monotonic() > deadline:
             raise TimeoutError("time budget exhausted fitting J-lens")
         captures, hooks = {}, []
@@ -63,6 +69,13 @@ def fit_jacobians(backbone, prefixes, *, deadline):
                     for i, grad in zip(sources, grads):
                         sums[i][start : start + n] += grad[:n, valid].float().mean(1).cpu()
             counts += 1
+            if checkpoint_path:
+                path = Path(checkpoint_path)
+                tmp = path.with_suffix(".tmp")
+                torch.save({"sums": sums, "counts": counts, "layers": list(cfg.layers)}, tmp)
+                tmp.replace(path)
+                if on_checkpoint:
+                    on_checkpoint()
             print(
                 f"J-lens calibration {counts}/{min(len(prefixes), cfg.jspace_prompts)}", flush=True
             )

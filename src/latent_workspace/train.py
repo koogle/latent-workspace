@@ -1,3 +1,4 @@
+import hashlib
 import json
 import random
 import time
@@ -54,12 +55,18 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
     started = time.monotonic()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     seed_all(cfg.seed)
+    source_hash = hashlib.sha256()
+    for source in sorted(Path(__file__).parent.glob("*.py")):
+        source_hash.update(source.name.encode() + source.read_bytes())
+    source_digest = source_hash.hexdigest()
     backbone = FrozenBackbone(cfg, device)
     # Persist actual immutable revisions before training.
     cfg.model_revision = backbone.revision
     if resume:
         old = json.loads((output / "manifest.json").read_text())
         cfg.dataset_revision = old["data"]["dataset_revision"]
+        if old.get("source_sha256") != source_digest:
+            raise ValueError("source changed since checkpoint; resume requires identical code")
         comparable = json.loads(json.dumps(cfg.to_dict()))
         if comparable != old["config"]:
             raise ValueError("resume config differs from saved config")
@@ -67,6 +74,7 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
     cfg.dataset_revision = data_info["dataset_revision"]
     manifest = {
         "config": cfg.to_dict(),
+        "source_sha256": source_digest,
         "model_revision": backbone.revision,
         "data": data_info,
         "device": device,
@@ -84,12 +92,20 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
             backbone.jacobians = torch.load(lens_path, weights_only=True)
         else:
             backbone.jacobians = fit_jacobians(
-                backbone, train[:, : cfg.context_length], deadline=started + cfg.max_seconds
+                backbone,
+                train[:, : cfg.context_length],
+                deadline=started + cfg.max_seconds,
+                checkpoint_path=output / "jacobian-calibration.pt",
+                on_checkpoint=on_checkpoint,
             )
             torch.save(backbone.jacobians, lens_path)
         if on_checkpoint:
             on_checkpoint()
-    report = {"variants": {}, "teacher": teacher_baseline(backbone, valid, cfg, device)}
+    report = {
+        "manifest": manifest,
+        "variants": {},
+        "teacher": teacher_baseline(backbone, valid, cfg, device),
+    }
     cache_path = output / "features.pt"
     if resume and cache_path.exists():
         cache = torch.load(cache_path, weights_only=True)

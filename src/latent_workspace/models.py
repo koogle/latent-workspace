@@ -110,10 +110,11 @@ def loss_and_logits(head, backbone, memory, target, *, all_masked=False):
         mask = torch.ones_like(target, dtype=torch.bool)
         features = head(memory)
     else:
-        mask, noise = corrupt(target)
         if all_masked:
-            mask = torch.ones_like(mask)
-            noise = torch.ones_like(noise)
+            mask = torch.ones_like(target, dtype=torch.bool)
+            noise = torch.ones(target.shape[0], device=target.device)
+        else:
+            mask, noise = corrupt(target)
         # Masked target IDs cannot leak through embeddings, even accidentally.
         ids = target.masked_fill(mask, 0)
         features = head(memory, backbone.embed(ids), mask, noise)
@@ -132,7 +133,7 @@ def sample_block(head, backbone, memory, temperature=0.0, steps=None):
         logits = backbone.project(head(memory)).float()
         return draw(logits, temperature)
     mask = torch.ones_like(ids, dtype=torch.bool)
-    steps = steps or head.cfg.diffusion_steps
+    steps = head.cfg.diffusion_steps if steps is None else steps
     if steps <= 0:
         raise ValueError("steps must be positive")
     for step in range(steps):
