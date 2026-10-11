@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import replace
 from types import SimpleNamespace
@@ -45,6 +46,12 @@ def test_saved_head_evaluation_opens_only_requested_split(tmp_path, monkeypatch,
     monkeypatch.setattr(posthoc, "evaluate", evaluate)
     monkeypatch.setattr(posthoc, "generate", lambda *args, **kwargs: [])
     request = replace(cfg, study_parent=str(source), evaluate_test=evaluate_test)
+    if evaluate_test:
+        with pytest.raises(ValueError, match="frozen source report hash"):
+            posthoc.evaluate_study(request, tmp_path / "unfrozen")
+        request.study_eval_hashes = {
+            str(source): hashlib.sha256((source / "study.json").read_bytes()).hexdigest()
+        }
     result = posthoc.evaluate_study(request, tmp_path / "evaluation")
     assert len(seen) == 3
     assert all(torch.all(x == int(evaluate_test)) for x in seen)

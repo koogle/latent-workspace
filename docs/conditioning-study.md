@@ -78,3 +78,11 @@ before requesting `study_eval_only=true, evaluate_test=true`. The saved-head
 suite supports multiple sources in one bounded job. Default posthoc evaluation
 remains validation-only. An integration test verifies that it opens only the
 explicitly requested split. Do not tune further on test measurements.
+
+
+All 11 decoder runs completed. The validation-selected steps and exact source
+report hashes are frozen in results/conditioning-test-protocol.json before test
+access. The suite evaluates every trained condition, not a test-selected winner.
+Four paired comparisons are specified there. Test access rejects a mismatched
+source report hash. The second probe seed is a ranking-stability check and does
+not alter the already selected training configurations.

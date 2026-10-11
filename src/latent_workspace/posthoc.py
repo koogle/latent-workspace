@@ -34,6 +34,9 @@ def evaluate_study(request, output):
     study = json.loads((source / "study.json").read_text())
     if not study.get("completed"):
         raise ValueError("posthoc evaluation requires a completed study")
+    source_digest = hashlib.sha256((source / "study.json").read_bytes()).hexdigest()
+    if request.evaluate_test and request.study_eval_hashes.get(str(source)) != source_digest:
+        raise ValueError("test evaluation requires a matching frozen source report hash")
     cfg = Config(**study["config"])
     device = "cuda" if torch.cuda.is_available() else "cpu"
     backbone = FrozenBackbone(cfg, device)
@@ -46,7 +49,7 @@ def evaluate_study(request, output):
         "test_status": "evaluated; checkpoints selected previously on validation"
         if request.evaluate_test
         else "sealed",
-        "source_report_sha256": hashlib.sha256((source / "study.json").read_bytes()).hexdigest(),
+        "source_report_sha256": source_digest,
         "heads": {},
     }
     for size in study["curves"]:
@@ -63,6 +66,8 @@ def evaluate_study(request, output):
             "checkpoint": checkpoint_path.name,
             "checkpoint_sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
             "domains": {},
+            "sample_prefixes": {},
+            "samples": {},
             "anchored_samples": {},
         }
         for domain, (a, b) in saved["metadata"]["domain_ranges"][split].items():
@@ -70,9 +75,16 @@ def evaluate_study(request, output):
                 head, backbone, validation[a:b], cfg, device, anchor_diagnostics=True
             )
             prefix = validation[a : a + 1, : cfg.context_length].to(device)
-            result["anchored_samples"][domain] = backbone.tokenizer.decode(
-                generate(head, backbone, prefix, max_new_tokens=24, anchor_first=True)
+            result["sample_prefixes"][domain] = backbone.tokenizer.decode(
+                prefix[0][prefix[0] >= 0].tolist()
             )
+            result["samples"][domain] = backbone.tokenizer.decode(
+                generate(head, backbone, prefix, max_new_tokens=24)
+            )
+            if head.kind == "diffusion":
+                result["anchored_samples"][domain] = backbone.tokenizer.decode(
+                    generate(head, backbone, prefix, max_new_tokens=24, anchor_first=True)
+                )
         with torch.no_grad():
             embeddings = backbone.embed(validation[:, cfg.context_length :].to(device)).float()
             projected = head.token_project(head.token_norm(embeddings))

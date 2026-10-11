@@ -41,16 +41,26 @@ for path in sorted(ROOT.glob(f"{PREFIX}-*.json*")):
         reports[name] = report
 scan = reports.get(f"{PREFIX}-scan-01")
 if scan:
+    replica = reports.get(f"{PREFIX}-scan-seed43-01")
     layers = scan["layer_scan"]["layers"]
     indices = scan["config"]["layers"]
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     for prefix, label in (("", "Residual stream"), ("attention", "Attention output")):
-        axes[0].plot(
+        line = axes[0].plot(
             indices,
             [layers[f"{prefix}{i}"]["future_nll"] for i in indices],
             marker="o",
-            label=label,
-        )
+            label=label + " (seed 42)",
+        )[0]
+        if replica:
+            other = replica["layer_scan"]["layers"]
+            axes[0].plot(
+                indices,
+                [other[f"{prefix}{i}"]["future_nll"] for i in indices],
+                linestyle="--",
+                color=line.get_color(),
+                label=label + " (seed 43)",
+            )
     for position in range(4):
         axes[1].plot(
             indices,
@@ -64,11 +74,11 @@ if scan:
         ax.legend()
     axes[0].set_title("Accessible future-token prediction: offsets 2–4")
     axes[1].set_title("Residual probes: each target offset")
-    fig.suptitle("Frozen Qwen2.5-0.5B · 48 independently trained probes · 500 updates each")
+    fig.suptitle("Frozen Qwen2.5-0.5B · 48 probes per seed · 500 updates each")
     fig.text(
         0.5,
         0.015,
-        "Lower loss is better. Finite-budget probe evidence, not intrinsic information; test sealed.",
+        "Lower loss is better. Finite-budget probe evidence, not intrinsic information; validation only.",
         ha="center",
         fontsize=9,
     )
@@ -137,7 +147,7 @@ fig.suptitle(f"{first['config']['model']} · 196,608 mixed-domain windows · mat
 fig.text(
     0.5,
     0.015,
-    "Common final-state residual readout; one seed; repeated validation selection; test sealed.",
+    "Common final-state residual readout; one decoder seed; test withheld during selection.",
     ha="center",
     fontsize=9,
 )
@@ -152,7 +162,7 @@ lines = [
     "",
     f"![Decoder training]({PREFIX}-comparison.png)",
     "",
-    "Same 196k training windows and 192 validation windows; test metrics sealed.",
+    "Same 196k training windows and 192 validation windows; test withheld during selection.",
     "Decoder comparisons share a final-state residual shortcut. Probe ranking",
     "uses no such shortcut. All-masked loss is not sequence likelihood.",
     "",

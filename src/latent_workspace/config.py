@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
@@ -15,6 +15,7 @@ class Config:
     scan_attention: bool = False
     study_eval_only: bool = False
     study_eval_parents: tuple[str, ...] = ()
+    study_eval_hashes: dict[str, str] = field(default_factory=dict)
     study_resume: str = ""
     study_reference: str = ""
     study_parent: str = ""
