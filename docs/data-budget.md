@@ -78,3 +78,17 @@ Expansion retains every original training row, appends distinct windows, exclude
 held-out groups/content hashes and carries validation/test tensors unchanged.
 The original full-pool training order is retained as the nested subset's prefix.
 The proposed 12k/49k, 8k-update expansion is configured but gated on diagnosis.
+
+The original 96-window memorization run reached about 1.71 training NLL but only
+26% all-masked training-token accuracy after 2,000 updates. This fails a practical
+memorization sanity check. Qwen's first-token validation NLL is 1.15–2.69 across
+domains, versus 6.77–7.37 for the original 12k-window drafter. Later-token losses
+from repeating Qwen's distribution are poor, as expected; it is not a solution.
+
+Two explicit diagnostic options are under evaluation before more data spending:
+`residual_readout` starts at the frozen final residual state and learns a zero-
+initialized correction; this adds final-state conditioning and changes readout
+initialization/normalization, so it is not a pure intermediate-layer ablation.
+`position_readout` uses a separate output projection at each block position to
+check whether shared decoding loses position information. It increases trainable
+parameters by about 1.38M for four tokens. Neither is a validated fix yet.

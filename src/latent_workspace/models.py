@@ -37,8 +37,16 @@ class BlockHead(nn.Module):
         self.cfg, self.variant = cfg, variant
         self.kind, self.condition = variant.split(":")
         self.position = nn.Parameter(torch.randn(cfg.block_size, cfg.width) * 0.02)
-        self.out_norm = nn.LayerNorm(hidden)
-        self.out = nn.Linear(cfg.width, hidden)
+        self.out_norm = nn.Identity() if cfg.residual_readout else nn.LayerNorm(hidden)
+        self.out = (
+            nn.ModuleList([nn.Linear(cfg.width, hidden) for _ in range(cfg.block_size)])
+            if cfg.position_readout
+            else nn.Linear(cfg.width, hidden)
+        )
+        if cfg.residual_readout:
+            for projection in self.out if cfg.position_readout else [self.out]:
+                nn.init.zeros_(projection.weight)
+                nn.init.zeros_(projection.bias)
         if self.kind == "probe":
             self.probe = nn.Sequential(
                 nn.Linear(hidden, cfg.width), nn.GELU(), nn.Linear(cfg.width, cfg.width), nn.GELU()
@@ -58,6 +66,7 @@ class BlockHead(nn.Module):
 
     def forward(self, memory, token_embeddings=None, masked=None, noise=None):
         b = memory.shape[0]
+        base = memory[:, len(self.cfg.layers) - 1, -1].float()[:, None]
         if self.kind == "probe":
             index = self.cfg.layers.index(int(self.condition))
             x = self.probe(memory[:, index, -1].float())[:, None] + self.position
@@ -97,7 +106,13 @@ class BlockHead(nn.Module):
                 x = x + self.time(noise[:, None].float())[:, None]
             for _ in range(self.cfg.refinement_rounds):
                 x = self.decoder(x, slots)
-        return self.out_norm(self.out(x))
+        projected = (
+            torch.stack([projection(x[:, i]) for i, projection in enumerate(self.out)], dim=1)
+            if self.cfg.position_readout
+            else self.out(x)
+        )
+        delta = self.out_norm(projected)
+        return base + delta if self.cfg.residual_readout else delta
 
 
 def corrupt(target, generator=None):

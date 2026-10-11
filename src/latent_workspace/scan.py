@@ -13,6 +13,7 @@ def cached_metrics(head, backbone, memory, targets, cfg, device):
     head.eval()
     sums = torch.zeros(cfg.block_size, device=device)
     hits = torch.zeros_like(sums)
+    repeated = 0
     for start in range(0, len(targets), cfg.batch_size):
         target = targets[start : start + cfg.batch_size].to(device)
         _, logits, _ = loss_and_logits(
@@ -23,10 +24,13 @@ def cached_metrics(head, backbone, memory, targets, cfg, device):
             all_masked=True,
         )
         sums += F.cross_entropy(logits.float().transpose(1, 2), target, reduction="none").sum(0)
-        hits += (logits.argmax(-1) == target).sum(0)
+        predictions = logits.argmax(-1)
+        hits += (predictions == target).sum(0)
+        repeated += int((predictions == predictions[:, :1]).all(-1).sum())
     return {
         "nll_by_position": (sums / len(targets)).tolist(),
         "accuracy_by_position": (hits / len(targets)).tolist(),
+        "same_prediction_at_all_positions": repeated / len(targets),
     }
 
 

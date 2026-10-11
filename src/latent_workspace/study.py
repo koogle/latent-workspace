@@ -180,6 +180,9 @@ def run_study(cfg, output, on_checkpoint=None):
                     "masked_supervised_tokens_seen": masked_exposures,
                     "training_sample_nll_by_position": train_metric["nll_by_position"],
                     "training_sample_accuracy_by_position": train_metric["accuracy_by_position"],
+                    "training_position_collapse_fraction": train_metric[
+                        "same_prediction_at_all_positions"
+                    ],
                     "validation_by_domain": by_domain,
                     "macro_validation_nll": sum(v["nll"] for v in by_domain.values())
                     / len(DOMAINS),
