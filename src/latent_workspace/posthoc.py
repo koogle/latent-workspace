@@ -30,6 +30,7 @@ def evaluate_study(request, output):
         if best_path.exists():
             checkpoint_path = best_path
         state = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
+        backbone.jacobians = state.get("jacobians")
         head = BlockHead(backbone.hidden_size, cfg, state["variant"]).to(device)
         head.load_state_dict(state["head"])
         result = {

@@ -41,6 +41,7 @@ class ToyBackbone(nn.Module):
     "variant",
     [
         "probe:1",
+        "probe:attention1",
         "parallel:final",
         "diffusion:final",
         "diffusion:layer1",

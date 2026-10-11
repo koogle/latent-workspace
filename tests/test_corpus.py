@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from latent_workspace.corpus import DOMAINS, SPLITS, Record, build, record_windows
@@ -50,7 +51,8 @@ def test_learning_curve_subsets_are_balanced_and_nested():
     torch.testing.assert_close(subsets[18], nested_indices(ranges, (18,), 42)[18])
 
 
-def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ("diffusion:multi", "diffusion:jspace", "scan"))
+def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch, mode):
     from dataclasses import replace
     from types import SimpleNamespace
 
@@ -67,7 +69,13 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch):
         test_examples=6,
         study_sizes=(6, 12),
         study_checkpoints=(1, 2),
-        variants=("diffusion:multi",),
+        variants=(mode if mode != "scan" else "diffusion:multi",),
+        study_scan_only=mode == "scan",
+        scan_attention=mode == "scan",
+        scan_steps=1,
+        jspace_prompts=1,
+        jspace_top_k=5,
+        jspace_dim_batch=4,
         batch_size=2,
         max_seconds=60,
     )
@@ -93,6 +101,12 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch):
     result = study.run_study(cfg, tmp_path)
     assert result["completed"]
     assert "sealed" in result["test_status"]
+    if mode == "scan":
+        assert set(result["layer_scan"]["layers"]) == {"1", "2", "attention1", "attention2"}
+        assert result["curves"] == {}
+    if mode == "diffusion:jspace":
+        assert len(result["calibration_indices"]) == 1
+        assert torch.load(tmp_path / "size-12-best.pt", weights_only=True)["jacobians"] is not None
     for curve in result["curves"].values():
         assert len(curve["checkpoints"]) == 2
         assert curve["checkpoints"][-1]["masked_supervised_tokens_seen"] <= 16

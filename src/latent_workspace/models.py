@@ -73,7 +73,9 @@ class BlockHead(nn.Module):
         b = memory.shape[0]
         base = memory[:, len(self.cfg.layers) - 1, -1].float()[:, None]
         if self.kind == "probe":
-            index = self.cfg.layers.index(int(self.condition))
+            index = self.cfg.layers.index(int(self.condition.removeprefix("attention")))
+            if self.condition.startswith("attention"):
+                index += len(self.cfg.layers)
             x = self.probe(memory[:, index, -1].float())[:, None] + self.position
         else:
             depth = len(self.cfg.layers)

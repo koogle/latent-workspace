@@ -35,12 +35,25 @@ def cached_metrics(head, backbone, memory, targets, cfg, device):
 
 
 def layer_scan(
-    backbone, train_memory, train_targets, valid_memory, valid_targets, cfg, device, deadline
+    backbone,
+    train_memory,
+    train_targets,
+    valid_memory,
+    valid_targets,
+    cfg,
+    device,
+    deadline,
+    *,
+    domain_ranges=None,
+    on_layer=None,
 ):
     results = {}
-    for layer in cfg.layers:
+    conditions = [str(layer) for layer in cfg.layers]
+    if cfg.scan_attention:
+        conditions += [f"attention{layer}" for layer in cfg.layers]
+    for condition in conditions:
         torch.manual_seed(cfg.seed)
-        head = BlockHead(backbone.hidden_size, cfg, f"probe:{layer}").to(device)
+        head = BlockHead(backbone.hidden_size, cfg, f"probe:{condition}").to(device)
         optimizer = torch.optim.AdamW(head.parameters(), lr=cfg.learning_rate)
         sampler = torch.Generator().manual_seed(cfg.seed)
         for _ in range(cfg.scan_steps):
@@ -59,12 +72,26 @@ def layer_scan(
         metric["future_nll"] = sum(future) / len(future)
         metric["parameters"] = sum(p.numel() for p in head.parameters())
         metric["steps"] = cfg.scan_steps
-        results[str(layer)] = metric
-        print(f"Layer scan {layer}: future NLL {metric['future_nll']:.4f}", flush=True)
+        if domain_ranges:
+            metric["validation_by_domain"] = {
+                domain: cached_metrics(
+                    head, backbone, valid_memory[a:b], valid_targets[a:b], cfg, device
+                )
+                for domain, (a, b) in domain_ranges.items()
+            }
+        results[condition] = metric
+        if on_layer:
+            on_layer(results)
+        print(f"Layer scan {condition}: future NLL {metric['future_nll']:.4f}", flush=True)
         del head, optimizer
     ranking = sorted(cfg.layers[:-1], key=lambda layer: results[str(layer)]["future_nll"])
     return {
         "layers": results,
+        "attention_ranking": sorted(
+            cfg.layers, key=lambda layer: results[f"attention{layer}"]["future_nll"]
+        )
+        if cfg.scan_attention
+        else [],
         "intermediate_ranking": ranking,
         "selection_metric": "validation mean NLL over offsets 2..block_size",
         "interpretation": "Accessible information under this finite-budget probe, not intrinsic information.",

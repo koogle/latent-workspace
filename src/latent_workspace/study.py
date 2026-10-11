@@ -156,13 +156,37 @@ def run_study(cfg, output, on_checkpoint=None):
             on_checkpoint()
 
     persist()
+    if any(v.endswith(":jspace") for v in cfg.variants):
+        from .jspace import fit_jacobians
+
+        eligible = (data["train"][:, : cfg.context_length].ge(0).sum(-1) >= 18).nonzero().flatten()
+        order = torch.randperm(len(eligible), generator=torch.Generator().manual_seed(cfg.seed + 1))
+        indices = eligible[order[: cfg.jspace_prompts]]
+        if len(indices) != cfg.jspace_prompts:
+            raise ValueError("not enough eligible training prefixes for J-lens calibration")
+        result["calibration_indices"] = indices.tolist()
+        backbone.jacobians = fit_jacobians(
+            backbone,
+            data["train"][indices, : cfg.context_length],
+            deadline=start + cfg.max_seconds,
+            checkpoint_path=output / "jacobian-calibration.pt",
+            on_checkpoint=on_checkpoint,
+        )
+        atomic_save(output / "jacobians.pt", backbone.jacobians)
+        backbone.conditioning = "jspace"
+        persist()
     memories = {}
     for split in ("train", "validation"):
         destination = None
         offset = 0
         for rows in data[split].split(cfg.batch_size):
             features = backbone.encode(rows[:, : cfg.context_length].to(device))[0].cpu()
-            if cfg.variants[0].split(":")[1] in ("multi", "final", "all", "best"):
+            if not cfg.scan_attention and cfg.variants[0].split(":")[1] in (
+                "multi",
+                "final",
+                "all",
+                "best",
+            ):
                 features = features[:, : len(cfg.layers)]
             if destination is None:
                 destination = torch.empty(
@@ -173,6 +197,35 @@ def run_study(cfg, output, on_checkpoint=None):
             if time.monotonic() - start > cfg.max_seconds:
                 raise TimeoutError("data study budget exhausted extracting features")
         memories[split] = destination
+    if cfg.study_scan_only:
+        from .scan import layer_scan
+
+        if cfg.scan_steps <= 0 or cfg.residual_readout:
+            raise ValueError(
+                "information scan needs positive steps and no final-state residual shortcut"
+            )
+
+        def save_scan(layers):
+            write_json(output / "layer-scan-progress.json", layers)
+            if on_checkpoint:
+                on_checkpoint()
+
+        result["layer_scan"] = layer_scan(
+            backbone,
+            memories["train"],
+            data["train"][:, cfg.context_length :],
+            memories["validation"],
+            data["validation"][:, cfg.context_length :],
+            cfg,
+            device,
+            start + cfg.max_seconds,
+            domain_ranges=metadata["domain_ranges"]["validation"],
+            on_layer=save_scan,
+        )
+        result["completed"] = True
+        result["elapsed_seconds"] = time.monotonic() - start
+        persist()
+        return result
     subsets = nested_indices(
         metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed, priority
     )
@@ -321,6 +374,7 @@ def run_study(cfg, output, on_checkpoint=None):
                         output / f"size-{size}-best.pt",
                         {
                             "head": head.state_dict(),
+                            "jacobians": backbone.jacobians,
                             "step": step,
                             "config": cfg.to_dict(),
                             "variant": head.variant,

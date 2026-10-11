@@ -20,3 +20,6 @@
   decoder diagnostics. Larger data consistently helps, but poor later-token
   generation and diminishing optimization returns do not justify further data
   expansion yet. This is a diagnostic choice, not sufficient-quality evidence.
+- 2026-10-11: Proceed with the requested trained layer/J-lens conditioning study
+  now, using the fixed diagnostic budget; do not defer the central experiment
+  until generation quality is solved. Keep probe and decoder conclusions separate.

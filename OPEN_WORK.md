@@ -2,7 +2,7 @@
 
 Private repo: koogle/latent-workspace, main; direct commits and regular pushes authorized.
 
-Current gate: [data sufficiency](docs/data-budget.md). Train one diffusion drafter
+Current work: [trained conditioning study](docs/conditioning-study.md). Train one diffusion drafter
 on mixed prose/code/translation and report domain validation separately. Test
 metrics remain sealed. The exact-window audit removed a historical overlap;
 clean studies preserve held-out tensors and have no exact split overlaps.
@@ -25,12 +25,17 @@ pool, use 4k updates at batch 128 for initial comparisons, and extend promising
 changes selectively. This is not enough evidence to call the data sufficient
 for useful generation. Prioritize the later-token bottleneck before more scaling.
 
+The conditioning J-lens smoke completed on Modal; 47 local tests pass. The
+24-layer residual/attention probe scan and final/all-residual decoder runs are
+active. Continue with selected-layer, attention and J-lens comparisons; do not
+wait for useful absolute quality before measuring the requested hypotheses.
+
 Remaining:
 - Diagnose weak later-token generalization; final-layer-only conditioning, known
   first-token anchoring, left-to-right unmasking and input normalization did not
   resolve it. Human corpus labels are still used, not Qwen distillation targets.
 - Larger validation set and near-duplicate audit before a definitive data budget.
-- Layer-information scan and selected/all-layer ablations after useful training.
+- Complete layer-information scan and trained selected/all-layer/J-lens ablations.
 - Qwen3-0.6B-Base / Qwen3.5-0.8B-Base adapters need real-model verification.
 - Freeze choices before evaluating the untouched test set.
 - No collaborative module or native backbone pretraining in this phase.

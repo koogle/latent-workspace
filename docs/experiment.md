@@ -98,3 +98,10 @@ windows per source record are collected; repositories can contain multiple files
 Validation controls checkpoint/layer/budget choices. `evaluate_test=false` is the
 default, and data studies require it. Test tensors may be prepared and deduplicated
 without evaluating their losses. See [data-budget protocol](data-budget.md).
+
+## Active trained conditioning study
+
+See [fixed protocol](conditioning-study.md). All 24 layers are extracted. The
+current decoder ablations share a final-state residual shortcut; the information
+probes explicitly disable it. Poor absolute quality does not block measuring
+these relative conditioning comparisons, but limits their interpretation.

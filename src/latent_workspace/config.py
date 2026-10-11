@@ -10,6 +10,8 @@ class Config:
     normalize_token_inputs: bool = False
     position_readout: bool = False
     residual_readout: bool = False
+    study_scan_only: bool = False
+    scan_attention: bool = False
     study_eval_only: bool = False
     study_resume: str = ""
     study_reference: str = ""
@@ -109,7 +111,7 @@ class Config:
         for variant in self.variants:
             kind, condition = variant.split(":")
             if kind == "probe":
-                if int(condition) not in self.layers:
+                if int(condition.removeprefix("attention")) not in self.layers:
                     raise ValueError("probe layer absent from extraction layers")
             elif kind not in ("parallel", "diffusion") or condition not in (
                 "final",

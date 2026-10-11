@@ -10,3 +10,5 @@ Consult → work → learn/update → continue. Keep references and verification
 in the owning guide, not only in conversation.
 
 Training budget and learning-curve decisions: [Data sufficiency](../data-budget.md).
+
+Trained layer and J-lens comparisons: [Conditioning study](../conditioning-study.md).
