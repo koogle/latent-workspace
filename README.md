@@ -83,3 +83,17 @@ uv run latent-workspace generate --checkpoint artifacts/conditioning-all-best.pt
 
 Checkpoint files reference pinned pretrained Qwen weights; they do not bundle
 those weights. See [current limitations and remaining work](OPEN_WORK.md).
+
+## Reading the training curves
+
+One **window** is a 128-token prefix and the following four target tokens. The
+four-token generation block stays fixed. Curve labels such as 500/1000/2000/4000
+count optimizer updates, not block length or learning-rate changes. At batch 128,
+4000 updates sample 512000 windows with replacement—about 2.6 sampled passes over
+196608 distinct windows. This is a fixed screening budget, not proof of convergence.
+
+The [small-data follow-up](docs/small-data-controls.md) measures the entire training
+subset alongside validation, with denser checkpoints and 96/768/3072-window sets.
+It tests all-layer conditioning, whole-layer dropout, zero-content attention, and
+both together. Learning rate remains 0.0003. Existing validation is reused for
+exploration; the earlier test has already been evaluated and is not reused here.

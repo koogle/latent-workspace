@@ -211,6 +211,8 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         losses = []
         while step < cfg.steps and time.monotonic() - started < cfg.max_seconds:
             head.train()
+            if hasattr(head, "workspace"):
+                head.workspace.dropout_step = step + 1
             indices = torch.randint(len(train), (cfg.batch_size,), generator=sampler)
             memory = cache[indices].to(device)
             target = train[indices, cfg.context_length :].to(device)

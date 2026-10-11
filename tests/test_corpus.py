@@ -51,7 +51,7 @@ def test_learning_curve_subsets_are_balanced_and_nested():
     torch.testing.assert_close(subsets[18], nested_indices(ranges, (18,), 42)[18])
 
 
-@pytest.mark.parametrize("mode", ("diffusion:multi", "diffusion:jspace", "scan"))
+@pytest.mark.parametrize("mode", ("diffusion:multi", "diffusion:jspace", "scan", "compact"))
 def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch, mode):
     from dataclasses import replace
     from types import SimpleNamespace
@@ -67,9 +67,9 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch, mod
         train_examples=12,
         eval_examples=6,
         test_examples=6,
-        study_sizes=(6, 12),
+        study_sizes=(6,) if mode == "compact" else (6, 12),
         study_checkpoints=(1, 2),
-        variants=(mode if mode != "scan" else "diffusion:multi",),
+        variants=(mode if mode not in ("scan", "compact") else "diffusion:multi",),
         study_scan_only=mode == "scan",
         scan_attention=mode == "scan",
         scan_steps=1,
@@ -214,7 +214,8 @@ def test_expansion_cleans_legacy_duplicate_and_held_out_windows():
     assert data["validation"] is old["validation"]
 
 
-def test_study_continuation_matches_uninterrupted_updates(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dropout,null", [(0.0, False), (0.25, True)])
+def test_study_continuation_matches_uninterrupted_updates(tmp_path, monkeypatch, dropout, null):
     from dataclasses import replace
     from types import SimpleNamespace
 
@@ -226,6 +227,8 @@ def test_study_continuation_matches_uninterrupted_updates(tmp_path, monkeypatch)
     cfg = replace(
         tiny_config(),
         corpus="mixed",
+        layer_dropout=dropout,
+        null_attention=null,
         train_examples=12,
         eval_examples=6,
         test_examples=6,
