@@ -31,6 +31,36 @@ def nested_indices(ranges, sizes, seed, priority=None):
     }
 
 
+def reference_diagnostics(path, backbone, cfg, device):
+    from .config import Config
+
+    path = Path(path)
+    report = json.loads((path / "study.json").read_text())
+    for key in ("model_revision", "context_length", "block_size", "memory_tokens", "layers"):
+        if report["config"][key] != json.loads(json.dumps(cfg.to_dict()))[key]:
+            raise ValueError(f"reference incompatible: {key}")
+    corpus = torch.load(path / "corpus.pt", weights_only=True)["tensors"]["train"]
+    metrics = {}
+    for size, curve in report["curves"].items():
+        if int(size) > 256:
+            raise ValueError("reference diagnostics are bounded to tiny training sets")
+        state = torch.load(path / f"size-{size}.pt", weights_only=True, map_location="cpu")
+        reference_cfg = Config(**state["config"])
+        head = BlockHead(backbone.hidden_size, reference_cfg, state["variant"]).to(device)
+        head.load_state_dict(state["head"])
+        rows = corpus[curve["train_indices"]]
+        memory = torch.cat(
+            [
+                backbone.encode(batch[:, : cfg.context_length].to(device))[0].cpu()
+                for batch in rows.split(cfg.batch_size)
+            ]
+        )
+        metrics[size] = cached_metrics(
+            head, backbone, memory, rows[:, cfg.context_length :], cfg, device
+        )
+    return {"run": str(path), "training_only": metrics}
+
+
 def run_study(cfg, output, on_checkpoint=None):
     cfg.validate()
     if cfg.corpus != "mixed" or len(cfg.variants) != 1 or cfg.evaluate_test:
@@ -99,6 +129,11 @@ def run_study(cfg, output, on_checkpoint=None):
         domain: repeated_next_token_baseline(backbone, data["validation"][a:b], cfg, device)
         for domain, (a, b) in metadata["domain_ranges"]["validation"].items()
     }
+
+    if cfg.study_reference:
+        result["reference_diagnostics"] = reference_diagnostics(
+            cfg.study_reference, backbone, cfg, device
+        )
 
     def persist():
         write_json(output / "study.json", result)

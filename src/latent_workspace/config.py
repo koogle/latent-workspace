@@ -9,6 +9,7 @@ class Config:
     model_revision: str = "main"
     position_readout: bool = False
     residual_readout: bool = False
+    study_reference: str = ""
     study_parent: str = ""
     study_sizes: tuple[int, ...] = ()
     study_checkpoints: tuple[int, ...] = (100, 500, 1000, 2000)

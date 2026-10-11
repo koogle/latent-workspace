@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
 from transformers import Qwen2Config, Qwen2ForCausalLM
 
@@ -109,7 +110,8 @@ def test_frozen_readout_matches_teacher_and_padding_cache():
     torch.testing.assert_close(incremental, full, atol=1e-5, rtol=1e-5)
 
 
-def test_residual_drafter_initializes_to_pretrained_logits_and_learns():
+@pytest.mark.parametrize("position_readout", [False, True])
+def test_residual_drafter_initializes_to_pretrained_logits_and_learns(position_readout):
     from dataclasses import replace
 
     from test_core import tiny_config
@@ -117,7 +119,7 @@ def test_residual_drafter_initializes_to_pretrained_logits_and_learns():
     from latent_workspace.models import BlockHead, loss_and_logits
 
     backbone = tiny_backbone()
-    cfg = replace(tiny_config(), residual_readout=True)
+    cfg = replace(tiny_config(), residual_readout=True, position_readout=position_readout)
     backbone.cfg = cfg
     prefix = torch.randint(31, (2, 24))
     target = torch.randint(31, (2, 4))
@@ -127,5 +129,8 @@ def test_residual_drafter_initializes_to_pretrained_logits_and_learns():
     expected = backbone.model(prefix).logits[:, -1:, :].expand_as(logits)
     torch.testing.assert_close(logits, expected, atol=1e-5, rtol=1e-5)
     loss.backward()
-    assert head.out.weight.grad.abs().sum() > 0
+    projections = head.out if position_readout else [head.out]
+    assert all(projection.weight.grad.abs().sum() > 0 for projection in projections)
+    if position_readout:
+        assert not torch.equal(head.out[0].weight.grad, head.out[1].weight.grad)
     assert all(p.grad is None for p in backbone.parameters())

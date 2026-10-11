@@ -20,6 +20,7 @@ def evaluate(head, backbone, data, cfg, device):
     exact, count, generated_exact = 0, 0, 0
     generated_accuracy = torch.zeros_like(nll)
     per_example = []
+    prefix_agreement = []
     for rows in data.split(cfg.batch_size):
         rows = rows.to(device)
         prefix, target = rows[:, : cfg.context_length], rows[:, cfg.context_length :]
@@ -28,7 +29,12 @@ def evaluate(head, backbone, data, cfg, device):
         _, logits, _ = loss_and_logits(head, backbone, memory, target, all_masked=True)
         ce = F.cross_entropy(logits.float().transpose(1, 2), target, reduction="none")
         hits = logits.argmax(-1) == target
-        generated_hits = sample_block(head, backbone, memory) == target
+        proposed = sample_block(head, backbone, memory)
+        generated_hits = proposed == target
+        teacher_choices = backbone.teacher_logits(prefix, proposed).argmax(-1)
+        prefix_agreement.extend(
+            (proposed == teacher_choices).long().cumprod(-1).sum(-1).cpu().tolist()
+        )
         generated_accuracy += generated_hits.sum(0)
         generated_exact += generated_hits.all(-1).sum().item()
         nll += ce.sum(0)
@@ -44,6 +50,11 @@ def evaluate(head, backbone, data, cfg, device):
         "exact_block_accuracy": exact / count,
         "generated_accuracy_by_position": (generated_accuracy / count).tolist(),
         "generated_exact_block_accuracy": generated_exact / count,
+        "qwen_greedy_prefix_agreement": sum(prefix_agreement) / count,
+        "qwen_greedy_full_block_agreement": sum(n == cfg.block_size for n in prefix_agreement)
+        / count,
+        "qwen_greedy_prefix_lengths": prefix_agreement,
+        "agreement_note": "Read-only comparison along proposed blocks; no verifier in generation and no speed claim.",
         "examples": count,
         "example_mean_nll": per_example,
         "nll_standard_error": float(values.std(unbiased=True) / count**0.5) if count > 1 else None,

@@ -14,7 +14,9 @@ but generation remains degenerate. A sufficient budget has not been established.
 
 Current follow-up: diagnose high absolute loss using 96-window memorization
 and a zero-training repeated-Qwen-distribution baseline before scaling further.
-The 12k/49k expansion is implemented with frozen corpus lineage, but not launched.
+The shared-output head failed memorization; position-specific outputs reached
+99.5% training-token accuracy. A residual readout improved first-token quality.
+The combined 12k/49k, 8k-update comparison is running on Modal.
 
 Remaining:
 - Next proposed bracket: 12,288 versus 49,152 windows, 2k/4k/8k updates.

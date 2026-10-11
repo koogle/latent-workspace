@@ -92,3 +92,16 @@ initialization/normalization, so it is not a pure intermediate-layer ablation.
 `position_readout` uses a separate output projection at each block position to
 check whether shared decoding loses position information. It increases trainable
 parameters by about 1.38M for four tokens. Neither is a validated fix yet.
+
+The position-specific 96-window run achieved 99.2% training-token accuracy at
+500 updates and 99.5% at 2,000 (NLL 0.035). Validation is deliberately terrible
+for this overfit tiny set; this establishes trainability, not generalization.
+The residual-only 12k-window run reached validation NLL 5.96 at 4k updates and
+preserved much of Qwen's first-token quality, but later positions remained weak.
+The combined readout is now being compared at 12k/49k windows and up to 8k updates.
+
+Future evaluations also record greedy prefix agreement with Qwen along the
+proposed block: only consecutive matching tokens before the first mismatch count.
+This uses no reference continuation labels and is separate from ground-truth
+accuracy. It is an evaluation diagnostic, not a deployed verifier, speculative
+sampling correctness proof or measured end-to-end speed improvement.
