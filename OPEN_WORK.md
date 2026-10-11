@@ -15,8 +15,8 @@ matches only 1.141 consecutive Qwen tokens / 4, with 1.6% full-block agreement.
 Absolute generation quality remains poor. The test split has now been evaluated;
 it must not be described as sealed or untouched for subsequent adaptive work.
 
-Fifty local tests and both real-model GPU smokes pass. All Modal jobs completed.
-Cumulative conservative reservations: $192/$200, not actual billed usage. The
+At completion of the original study, 50 local tests and both real-model GPU
+smokes passed, with $192/$200 reserved (not actual billed usage). The
 all-layer inference checkpoint is downloaded and checksum-verified against the
 tested head; other best/final checkpoints remain in the dedicated Modal volume.
 
