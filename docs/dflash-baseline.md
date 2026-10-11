@@ -107,3 +107,16 @@ The historical runner still reserves its full 3600-second timeout. Latest and be
 checkpoints, optimizer/RNG state, prompt manifest and offline teacher cache persist
 in the dedicated volume. Resume loading for this new trainer is not implemented yet;
 saved state preserves the ingredients but is not claimed as a tested resume path.
+
+### Checkpoint generation command
+
+After a completed run, download its selected checkpoint and use the greedy verifier:
+
+```bash
+uv run modal volume get latent-workspace-qwen-runs dflash-pilot-02/best.pt artifacts/dflash-best.pt
+uv run latent-workspace draft --checkpoint artifacts/dflash-best.pt --prompt 'def fibonacci(n):' --tokens 64
+```
+
+The command returns verified text and accepted-new-token statistics. Its single-call
+timing is not a benchmark. Target weights are loaded from the pinned Hugging Face
+revision; the checkpoint stores the draft model, not another copy of Qwen.

@@ -16,11 +16,19 @@ def main():
     gen.add_argument("--prompt", required=True)
     gen.add_argument("--tokens", type=int, default=32)
     gen.add_argument("--temperature", type=float, default=0)
+    draft = sub.add_parser("draft", help="DFlash-style greedy drafting with Qwen verification")
+    draft.add_argument("--checkpoint", required=True)
+    draft.add_argument("--prompt", required=True)
+    draft.add_argument("--tokens", type=int, default=128)
     args = parser.parse_args()
     if args.command == "train":
         from .train import run
 
         print(json.dumps(run(Config.load(args.config), args.output, resume=args.resume), indent=2))
+    elif args.command == "draft":
+        from .dflash_cli import generate_checkpoint
+
+        print(json.dumps(generate_checkpoint(args.checkpoint, args.prompt, args.tokens), indent=2))
     else:
         import torch
 

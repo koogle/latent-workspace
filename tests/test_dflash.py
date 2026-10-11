@@ -122,3 +122,20 @@ def test_short_worker_reservation_matches_actual_timeout_and_keeps_cap(tmp_path)
         reserve(path, "bad", "L40S", timeout_seconds=0)
     with pytest.raises(ValueError, match="timeout"):
         reserve(path, "too-long", "L40S", timeout_seconds=3601)
+
+
+def test_verifier_commits_fully_accepted_blocks_without_skipping_bonus_tokens():
+    target, draft = fixture()
+    prompt = torch.tensor([[4, 7, 9, 1]])
+    expected = greedy_generate(target, prompt, 12)["tokens"]
+    full = torch.cat((prompt, torch.tensor([expected])), dim=1)
+    with torch.no_grad():
+        oracle_hidden = target.model(full).last_hidden_state
+    # Oracle is only a verifier fixture: it deliberately knows the correct future.
+    draft.forward = lambda embeddings, positions, cache, mask=None: oracle_hidden[
+        :, positions[0] - 1
+    ]
+    result = verified_generate(draft, target, prompt, 12, 30)
+    assert result["tokens"] == expected
+    assert result["accepted_new_draft_tokens"] == [3, 3, 3]
+    assert result["verification_calls"] == 3
