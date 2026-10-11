@@ -44,6 +44,12 @@ for report in reports.values():
         "decoder_layers",
         "position_readout",
         "residual_readout",
+        "learning_rate",
+        "context_length",
+        "memory_tokens",
+        "slots",
+        "refinement_rounds",
+        "diffusion_steps",
     ):
         assert report["config"][key] == reference["config"][key], key
 colors = {12288: "#a86818", 49152: "#2779ad", 196608: "#24804c"}

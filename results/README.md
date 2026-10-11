@@ -41,3 +41,18 @@ test metrics remain sealed. This is plumbing verification only.
 [Measured results and curves](data-study-01.md): validation NLL at 2k updates
 is 9.65/7.80/7.52 for 768/3,072/12,288 windows. Generation remains repetitive;
 test remains sealed. See [protocol](../docs/data-budget.md).
+
+
+## Clean follow-up and diagnostics
+
+See [consolidated measurements](data-scaling.md) and [curves](data-scaling.png).
+The original data-study-01 pool contained one validation-overlapping window
+(nine training copies) and duplicate training windows. Its numbers are historical
+exploration, not clean validation evidence. The repaired studies remove these
+rows, refill balanced nested subsets, and retain unchanged held-out tensors.
+
+`data-position-memorize-01` establishes tiny-set trainability, not generalization.
+`data-repaired-02`, `data-large-01`, `data-batch128-01` and
+`data-large-batch128-01` separate available unique data and optimization exposure.
+`data-final-control-01`, `data-normalized-01` and `data-posthoc-batch-01` are
+negative quality diagnostics. Large raw reports use lossless `.json.gz` archives.
