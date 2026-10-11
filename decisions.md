@@ -23,3 +23,8 @@
 - 2026-10-11: Proceed with the requested trained layer/J-lens conditioning study
   now, using the fixed diagnostic budget; do not defer the central experiment
   until generation quality is solved. Keep probe and decoder conclusions separate.
+- 2026-10-11: Completed nine Qwen2.5 and two Qwen3-0.6B trained conditions and
+  evaluated all validation-selected heads on test once under a committed hash-
+  checked protocol. Retain all-layer residual conditioning as the strongest
+  tested diffusion memory, but do not claim a diffusion advantage or useful
+  generation. Use fresh held-out data for subsequent adaptive experiments.

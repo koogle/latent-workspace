@@ -76,12 +76,28 @@ summary = {
     "limits": "One decoder seed, 192 grouped test windows, multiple exploratory comparisons. Intervals are conditional on trained heads; not corrected for multiple testing.",
 }
 (ROOT / "conditioning-test-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-fig, axes = plt.subplots(1, 2, figsize=(13, 6))
-labels = [r["run"].replace("conditioning-", "").removesuffix("-01") for r in rows]
+fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+names = {
+    "conditioning-final-01": "Final residual",
+    "conditioning-all-01": "All 24 residual layers",
+    "conditioning-best-01": "Residual layer 18",
+    "conditioning-selected-01": "Residual layers 18/20/17",
+    "conditioning-attention-all-01": "All 24 attention outputs",
+    "conditioning-attention-best-01": "Attention output 20",
+    "conditioning-attention-selected-01": "Attention outputs 20/16/15",
+    "conditioning-jspace-01": "J-lens 18/20/17",
+    "conditioning-parallel-all-01": "Parallel, all residuals",
+    "qwen3-conditioning-final-01": "Qwen3 0.6B, final",
+    "qwen3-conditioning-all-01": "Qwen3 0.6B, all 28",
+}
+labels = [names[r["run"]] for r in rows]
 y = np.arange(len(rows))
 colors = ["#2779ad" if "Qwen2.5" in r["model"] else "#a86818" for r in rows]
-axes[0].barh(y, [r["test_nll"] for r in rows], color=colors)
-axes[1].barh(y, [r["qwen_prefix"] for r in rows], color=colors)
+bars = axes[0].barh(y, [r["test_nll"] for r in rows], color=colors)
+axes[0].bar_label(bars, fmt="%.3f", padding=3, fontsize=8)
+axes[0].set_xlim(0, 6.4)
+bars = axes[1].barh(y, [r["qwen_prefix"] for r in rows], color=colors)
+axes[1].bar_label(bars, fmt="%.3f", padding=3, fontsize=8)
 for ax in axes:
     ax.set_yticks(y, labels)
     ax.invert_yaxis()

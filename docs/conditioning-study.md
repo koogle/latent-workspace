@@ -86,3 +86,16 @@ access. The suite evaluates every trained condition, not a test-selected winner.
 Four paired comparisons are specified there. Test access rejects a mismatched
 source report hash. The second probe seed is a ranking-stability check and does
 not alter the already selected training configurations.
+
+
+## Completed outcome
+
+All training and the frozen test suite completed. See
+[findings](../results/conditioning-findings.md) and [test measurements](../results/conditioning-test.md).
+The second probe seed retained attention subset 20/16/15 and ranked residual
+layers 18/19/20; it did not change any trained decoder choice. Test was evaluated
+only after the protocol commit and all source hashes matched. The previous test
+split is now exposed. Establish new held-out data before adaptive follow-up work.
+The parallel baseline receives all four labels per example, while diffusion
+averages about 2.5 masked labels; equal update/example budgets do not isolate
+the denoising objective from that supervision difference.

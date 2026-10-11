@@ -56,3 +56,14 @@ rows, refill balanced nested subsets, and retain unchanged held-out tensors.
 `data-large-batch128-01` separate available unique data and optimization exposure.
 `data-final-control-01`, `data-normalized-01` and `data-posthoc-batch-01` are
 negative quality diagnostics. Large raw reports use lossless `.json.gz` archives.
+
+
+## Completed conditioning study
+
+[Findings](conditioning-findings.md), [training curves](conditioning-report.md),
+[two-seed layer scan](conditioning-layer-scan.png), [Qwen3 comparison](qwen3-conditioning-report.md)
+and [frozen test evaluation](conditioning-test.md) cover the actual trained study.
+All 11 checkpoint selections were frozen before test access; the test is now
+exposed. The source report hashes, checkpoint hashes and corpus identity audit
+are retained. Best heads and resumable checkpoints are in the dedicated Modal
+volume. The all-layer Qwen2.5 inference head is also downloaded locally.

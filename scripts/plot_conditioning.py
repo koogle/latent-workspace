@@ -73,7 +73,7 @@ if scan:
         ax.grid(alpha=0.2)
         ax.legend()
     axes[0].set_title("Accessible future-token prediction: offsets 2–4")
-    axes[1].set_title("Residual probes: each target offset")
+    axes[1].set_title("Residual probes: target offsets (seed 42)")
     fig.suptitle("Frozen Qwen2.5-0.5B · 48 probes per seed · 500 updates each")
     fig.text(
         0.5,

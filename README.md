@@ -37,16 +37,12 @@ See [experiment protocol](docs/experiment.md), [knowledge index](docs/knowledge/
 and [open work](OPEN_WORK.md). All dependencies and files belong to this project;
 it has no connection to the Age of Agents game.
 
-## Current gate: training-data sufficiency
+## Completed studies
 
-The initial WikiText pilot did not produce useful generation. Before scaling,
-run the [mixed-domain learning-curve study](docs/data-budget.md): nested dataset
-sizes at matched update budgets, per-domain validation, and a sealed test set.
-
-```bash
-uv run modal run modal_app.py --config configs/mixed-smoke.json --run-id mixed-smoke-01
-uv run modal run modal_app.py --config configs/data-study.json --run-id data-study-01
-```
+The initial WikiText pilot did not produce useful generation. The subsequent
+[mixed-domain learning-curve study](docs/data-budget.md) separated corpus size
+from optimization exposure. Its original pool had an exact-window overlap;
+clean follow-up runs removed it and preserved held-out data identities.
 
 Additional reference: Chen et al., [DFlash: Block Diffusion for Flash Speculative
 Decoding](https://arxiv.org/abs/2602.06036), [official code](https://github.com/z-lab/dflash).
@@ -57,8 +53,33 @@ more data improved validation loss, but sample generations remain degenerate.
 No sufficient training budget or useful drafter quality is established yet.
 
 
-The [clean follow-up curves](results/data-scaling.md) compare up to 196,608
-mixed-domain windows across three seeds. More data helps consistently, but a
-16k-update continuation still has NLL 5.201 and consecutive Qwen agreement only
-1.10/4 tokens. Keep the 196k pool for decoder diagnostics; useful block generation
-and a sufficient training-data budget remain unestablished. Test stays sealed.
+The [data-size curves](results/data-scaling.md) established a 196,608-window
+mixed-domain diagnostic pool. The [trained conditioning study](results/conditioning-findings.md)
+is now complete: 96 layer probes, nine Qwen2.5-0.5B decoder conditions, two
+Qwen3-0.6B conditions, and a frozen-checkpoint test evaluation of all 11 heads.
+All-layer residual conditioning helps, but compressed J-lens conditioning and
+denoising do not improve on their respective controls here. Generation remains
+poor; there is no demonstrated quality parity or speedup.
+
+![Conditioning learning curves](results/conditioning-comparison.png)
+
+The [test report](results/conditioning-test.md) includes all domain measurements,
+paired uncertainty and actual continuations. Test was withheld during training
+and selection, then evaluated once; it is no longer an untouched holdout for
+future adaptive work.
+
+## Trained checkpoint
+
+The all-layer Qwen2.5 diffusion head is saved on Modal and downloaded locally at
+`artifacts/conditioning-all-best.pt`. Its checksum matches the frozen test head.
+It is a research checkpoint with poor generation quality.
+
+```bash
+uv run modal volume get latent-workspace-qwen-runs \
+  conditioning-all-01/size-196608-best.pt artifacts/conditioning-all-best.pt
+uv run latent-workspace generate --checkpoint artifacts/conditioning-all-best.pt \
+  --prompt 'Once upon a time' --tokens 24
+```
+
+Checkpoint files reference pinned pretrained Qwen weights; they do not bundle
+those weights. See [current limitations and remaining work](OPEN_WORK.md).

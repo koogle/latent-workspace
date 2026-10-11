@@ -105,3 +105,9 @@ See [fixed protocol](conditioning-study.md). All 24 layers are extracted. The
 current decoder ablations share a final-state residual shortcut; the information
 probes explicitly disable it. Poor absolute quality does not block measuring
 these relative conditioning comparisons, but limits their interpretation.
+
+
+The trained conditioning comparison and its frozen test suite are now complete.
+Historical reports correctly describe test as sealed at their creation time;
+current status is **evaluated once after checkpoint selection**. This exposed
+split cannot serve as a new untouched holdout for future adaptive experiments.
