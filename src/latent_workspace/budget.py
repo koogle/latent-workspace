@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 
-CAP_USD = 200.0
+CAP_USD = 500.0  # Upper end of the user-authorized original $200–$500 plan.
 # Deliberately conservative allocation rates, not a quotation of Modal prices.
 HOURLY_RESERVATION = {"L40S": 5.0, "H100": 12.0}
 TIMEOUT_SECONDS = 3600
@@ -23,7 +23,7 @@ def reserve(path, run_id, gpu, *, timeout_seconds=TIMEOUT_SECONDS):
         amount = HOURLY_RESERVATION[gpu] * timeout_seconds / 3600
         spent = sum(item["usd"] for item in ledger["reservations"])
         if not math.isfinite(spent) or spent + amount > CAP_USD:
-            raise ValueError("$200 allocation cap reached; no job submitted")
+            raise ValueError(f"${CAP_USD:g} allocation cap reached; no job submitted")
         if any(item["run_id"] == run_id for item in ledger["reservations"]):
             raise ValueError("run ID already reserved; use a new ID, including for resumes")
         ledger["reservations"].append(

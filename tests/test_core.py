@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch import nn
 
-from latent_workspace.budget import reserve
+from latent_workspace.budget import CAP_USD, reserve
 from latent_workspace.config import Config
 from latent_workspace.data import documents, make_windows
 from latent_workspace.models import BlockHead, corrupt, loss_and_logits, sample_block
@@ -126,7 +126,7 @@ def test_budget_fail_closed_and_durable(tmp_path):
     reserve(path, "first", "H100")
     with pytest.raises(ValueError, match="already reserved"):
         reserve(path, "first", "H100")
-    for i in range(15):
+    for i in range(int(CAP_USD // 12) - 1):
         reserve(path, str(i), "H100")
     with pytest.raises(ValueError, match="cap reached"):
         reserve(path, "over", "H100")

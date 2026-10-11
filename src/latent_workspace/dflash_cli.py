@@ -4,7 +4,6 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .dflash import DFlashDrafter, DraftConfig, verified_generate
-from .dflash_train import precision
 
 
 def generate_checkpoint(checkpoint, prompt, tokens):
@@ -17,10 +16,11 @@ def generate_checkpoint(checkpoint, prompt, tokens):
         AutoModelForCausalLM.from_pretrained(
             cfg.model,
             revision=cfg.model_revision,
-            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            dtype=torch.bfloat16,
             attn_implementation="sdpa",
         )
         .to(device)
+        .float()
         .eval()
         .requires_grad_(False)
     )
@@ -28,13 +28,13 @@ def generate_checkpoint(checkpoint, prompt, tokens):
     drafter = DFlashDrafter(target.config, cfg).to(device).eval()
     drafter.load_state_dict(state["drafter"])
     prefix = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).input_ids.to(device)
-    with precision(device):
-        result = verified_generate(
-            drafter, target, prefix, tokens, state["mask_token_id"], tokenizer.eos_token_id
-        )
+    result = verified_generate(
+        drafter, target, prefix, tokens, state["mask_token_id"], tokenizer.eos_token_id
+    )
+    result["target_arithmetic"] = "float32; stored BF16 target weights upcast"
     result["text"] = tokenizer.decode(result["tokens"], skip_special_tokens=True)
     result["checkpoint_step"] = state["step"]
     result["note"] = (
-        "Greedy target verification; anchor excluded from acceptance. One untuned call is not a speed benchmark."
+        "FP32 greedy verification matched checked GPU cases. BF16 AR/block parity is not established. Anchor excluded; this call is not a speed benchmark."
     )
     return result

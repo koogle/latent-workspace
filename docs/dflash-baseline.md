@@ -102,11 +102,15 @@ ablations merely because training loss falls or a tiny set can be memorized.
 
 The worker has an actual 900-second timeout, no retries, one L40S, and a 720-second
 internal deadline. Its $1.25 conservative reservation uses the same $5/hour rate
-and $200 cap as historical jobs. Existing reservations are not refunded or reset.
+and locked allocation ledger as historical jobs. The original user plan authorized
+$200–$500; after reaching the initial conservative $200 ceiling, the current cap is
+$500 for continued baseline training. Existing reservations are not refunded or reset.
 The historical runner still reserves its full 3600-second timeout. Latest and best
 checkpoints, optimizer/RNG state, prompt manifest and offline teacher cache persist
-in the dedicated volume. Resume loading for this new trainer is not implemented yet;
-saved state preserves the ingredients but is not claimed as a tested resume path.
+in the dedicated volume. Continuation restores model, AdamW and CPU/CUDA/sampler RNG from `latest.pt`,
+validates unchanged baseline/data fields, and reuses the archived teacher corpus.
+Each continuation explicitly starts a new warmup/cosine cycle; it is not represented
+as an uninterrupted old schedule. Exact next-update state restoration is unit-tested.
 
 ### Checkpoint generation command
 
@@ -120,3 +124,34 @@ uv run latent-workspace draft --checkpoint artifacts/dflash-best.pt --prompt 'de
 The command returns verified text and accepted-new-token statistics. Its single-call
 timing is not a benchmark. Target weights are loaded from the pinned Hugging Face
 revision; the checkpoint stores the draft model, not another copy of Qwen.
+
+
+## Executed pilot and current continuation
+
+The pilot reached 1000 updates: training-diagnostic NLL 7.747, validation NLL 7.820,
+and only 0.145 accepted new tokens / 7. This is an underfitting observation on a tiny
+response corpus, not evidence that the data requirement has been met. Usable data:
+380 train and 47 validation responses after dropping five too-short responses;
+20661 unique training response-token slots. All 48 test prompts remain ungenerated.
+
+The BF16 verifier check failed on translation. Replaying identical fixed tokens in
+single-token versus block target forwards reproduced an argmax flip: top-two gap
+0.0625, maximum logit change 0.25. FP32 arithmetic on the same stored weights matched
+AR for all three diagnostic prompts. FP32 is now the correctness-reference path for
+the CLI and future rollout checks. This does not make FP32 performance a BF16 speed
+claim, or prove bitwise parity for every possible prompt. Failures are retained in
+reports; a failed output comparison suppresses the speedup ratio.
+
+`dflash-fit-01` continues exactly the same draft/optimizer/data for up to 20000 more
+updates, with checkpoints every 250 and a new warmup/cosine cycle. It is a fitting
+study of the SAME baseline, not another model comparison. The long worker has an
+actual 3600-second bound and reserves $5 under the original authorized upper cap.
+No new response generation, hidden-state objective, layer selection or test access.
+
+```bash
+uv run modal run modal_dflash.py --config configs/dflash-fit.json --run-id dflash-fit-01 --long-run
+```
+
+A separate readout audit found a norm-scale difference but an essentially zero
+analytical CE lower bound. It does not establish normalization as the cause; no
+readout change was introduced on that evidence.

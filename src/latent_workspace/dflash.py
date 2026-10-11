@@ -35,6 +35,7 @@ class DraftConfig:
     warmup_ratio: float = 0.04
     seed: int = 42
     max_seconds: int = 720
+    continue_from: str = ""
     historical_corpus: str = "/runs/data-large-01/corpus.pt"
     prompt_manifest: str = ""
 

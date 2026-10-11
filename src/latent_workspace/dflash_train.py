@@ -1,7 +1,9 @@
 """One DFlash-style baseline: target responses, random anchors, and acceptance evaluation."""
 
 import hashlib
+import json
 import math
+import shutil
 import statistics
 import time
 from contextlib import nullcontext
@@ -122,7 +124,7 @@ def benchmark(drafter, target, tokenizer, examples, mask_id):
     rows = []
     for example in selected:
         prompt = example["tokens"][: example["prompt_length"]][None].to(target.device)
-        with precision(target.device):
+        with precision(target.device) if target.dtype != torch.float32 else nullcontext():
             greedy_generate(target, prompt, 8, tokenizer.eos_token_id)
             verified_generate(drafter, target, prompt, 8, mask_id, tokenizer.eos_token_id)
             ar, spec = [], []
@@ -138,8 +140,6 @@ def benchmark(drafter, target, tokenizer, examples, mask_id):
                             )
                         )
         match = all(x["tokens"] == ar[0]["tokens"] for x in ar + spec)
-        if not match:
-            raise AssertionError("verified greedy decoding differs from target AR output")
         ar_seconds = statistics.median(x["total_seconds"] for x in ar)
         spec_seconds = statistics.median(x["total_seconds"] for x in spec)
         rows.append(
@@ -150,7 +150,11 @@ def benchmark(drafter, target, tokenizer, examples, mask_id):
                 "identical_to_target_greedy": match,
                 "ar_seconds": ar_seconds,
                 "speculative_seconds": spec_seconds,
-                "end_to_end_speedup": ar_seconds / spec_seconds,
+                "end_to_end_speedup": ar_seconds / spec_seconds if match else None,
+                "target_arithmetic": str(target.dtype),
+                "mismatch_tokens": None
+                if match
+                else {"ar": ar[0]["tokens"], "speculative": spec[0]["tokens"]},
                 "accepted_beyond_anchor": spec[0]["mean_accepted_beyond_anchor"],
                 "acceptance_lengths": spec[0]["accepted_new_draft_tokens"],
                 "verification_calls": spec[0]["verification_calls"],
@@ -159,6 +163,37 @@ def benchmark(drafter, target, tokenizer, examples, mask_id):
             }
         )
     return rows
+
+
+def restore_continuation(cfg, previous, state, drafter, optimizer, generator):
+    old = previous["config"]
+    for key in (
+        "model",
+        "model_revision",
+        "layers",
+        "draft_layers",
+        "block_size",
+        "gamma",
+        "train_prompts",
+        "validation_prompts",
+        "test_prompts",
+        "prompt_tokens",
+        "response_tokens",
+        "batch_size",
+        "anchors_per_sequence",
+        "learning_rate",
+        "seed",
+    ):
+        if json.dumps(cfg.to_dict()[key]) != json.dumps(old[key]):
+            raise ValueError(f"continuation changes baseline/data: {key}")
+    if state["step"] != previous["curve"][-1]["step"]:
+        raise ValueError("checkpoint/report step mismatch")
+    drafter.load_state_dict(state["drafter"])
+    optimizer.load_state_dict(state["optimizer"])
+    generator.set_state(state["sampler_rng"].cpu())
+    torch.set_rng_state(state["rng"].cpu())
+    if state["cuda_rng"]:
+        torch.cuda.set_rng_state_all([x.cpu() for x in state["cuda_rng"]])
 
 
 def run_dflash(cfg, output, on_checkpoint=None):
@@ -182,16 +217,32 @@ def run_dflash(cfg, output, on_checkpoint=None):
     )
     tokenizer = AutoTokenizer.from_pretrained(cfg.model, revision=cfg.model_revision)
     mask_id = tokenizer.get_vocab().get("<|fim_pad|>", tokenizer.eos_token_id)
-    manifest = prepare_prompts(cfg, tokenizer, output, deadline - 120)
-    if on_checkpoint:
-        on_checkpoint()
-    data, audit = build_teacher_cache(
-        cfg, target, tokenizer, manifest, output, deadline - 120, on_checkpoint
-    )
+    previous, state = None, None
+    if cfg.continue_from:
+        parent = Path(cfg.continue_from)
+        previous = json.loads((parent / "report.json").read_text())
+        state = torch.load(parent / "latest.pt", map_location="cpu", weights_only=True)
+        data = torch.load(parent / "teacher.pt", map_location="cpu", weights_only=True)
+        audit = json.loads((parent / "teacher-audit.json").read_text())
+        for name in ("teacher.pt", "teacher-audit.json", "prompts.json", "best.pt"):
+            shutil.copyfile(parent / name, output / name)
+    else:
+        manifest = prepare_prompts(cfg, tokenizer, output, deadline - 120)
+        if on_checkpoint:
+            on_checkpoint()
+        data, audit = build_teacher_cache(
+            cfg, target, tokenizer, manifest, output, deadline - 120, on_checkpoint
+        )
     seed_all(cfg.seed)
     drafter = DFlashDrafter(target.config, cfg).to(device)
     optimizer = torch.optim.AdamW(drafter.parameters(), lr=cfg.learning_rate, weight_decay=0.01)
     generator = torch.Generator().manual_seed(cfg.seed)
+    start_step = 0
+    if previous:
+        restore_continuation(cfg, previous, state, drafter, optimizer, generator)
+        if mask_id != previous["mask_token_id"]:
+            raise ValueError("continuation changes mask token")
+        start_step = state["step"]
     source = hashlib.sha256()
     for file in sorted(Path(__file__).parent.glob("*.py")):
         source.update(file.name.encode() + file.read_bytes())
@@ -210,8 +261,31 @@ def run_dflash(cfg, output, on_checkpoint=None):
     best = (-1.0, -float("inf"))
     supervised = 0
     sampled_anchors = 0
-    for step in range(cfg.steps + 1):
-        if step:
+    if previous:
+        report["curve"] = previous["curve"]
+        report["parent_run"] = cfg.continue_from
+        report["parent_source_sha256"] = previous["source_sha256"]
+        report["best_step"] = previous["best_step"]
+        selected = next(p for p in previous["curve"] if p["step"] == previous["best_step"])[
+            "validation"
+        ]
+        best = (selected["accepted_beyond_anchor"], -selected["nll"])
+        supervised = previous["curve"][-1]["supervised_target_exposures"]
+        sampled_anchors = previous["curve"][-1]["sampled_anchor_blocks"]
+    report["training_goal_step"] = start_step + cfg.steps
+    report["schedule_note"] = (
+        "Each run is a new warmup/cosine cycle; continuation restores model, AdamW and RNG on the exact archived teacher corpus."
+    )
+    sequence_hash = hashlib.sha256()
+    for split, examples in data.items():
+        for e in examples:
+            sequence_hash.update(
+                split.encode() + e["group"].encode() + e["tokens"].numpy().tobytes()
+            )
+    report["teacher_sequence_sha256"] = sequence_hash.hexdigest()
+    for cycle_step in range(1 if previous else 0, cfg.steps + 1):
+        step = start_step + cycle_step
+        if cycle_step:
             drafter.train()
             examples = []
             for i in range(cfg.batch_size):
@@ -222,9 +296,10 @@ def run_dflash(cfg, output, on_checkpoint=None):
             )
             warmup = max(1, round(cfg.steps * cfg.warmup_ratio))
             scale = (
-                min(step / warmup, 1.0)
-                if step <= warmup
-                else 0.5 * (1 + math.cos(math.pi * (step - warmup) / max(1, cfg.steps - warmup)))
+                min(cycle_step / warmup, 1.0)
+                if cycle_step <= warmup
+                else 0.5
+                * (1 + math.cos(math.pi * (cycle_step - warmup) / max(1, cfg.steps - warmup)))
             )
             for group in optimizer.param_groups:
                 group["lr"] = cfg.learning_rate * scale
@@ -239,7 +314,7 @@ def run_dflash(cfg, output, on_checkpoint=None):
             sampled_anchors += anchors.numel()
             supervised += anchors.numel() * (cfg.block_size - 1)
         time_limit = time.monotonic() >= deadline - 60
-        if step % cfg.eval_every == 0 or step == cfg.steps or time_limit:
+        if cycle_step % cfg.eval_every == 0 or cycle_step == cfg.steps or time_limit:
             validation = evaluate(drafter, target, data["validation"], mask_id)
             training = evaluate(drafter, target, data["train"], mask_id, limit_per_domain=4)
             row = {
@@ -249,6 +324,7 @@ def run_dflash(cfg, output, on_checkpoint=None):
                 "sampled_anchor_blocks": sampled_anchors,
                 "supervised_target_exposures": supervised,
                 "elapsed_seconds": time.monotonic() - started,
+                "phase": output.name,
             }
             report["curve"].append(row)
             state = {
@@ -282,8 +358,16 @@ def run_dflash(cfg, output, on_checkpoint=None):
             break
     state = torch.load(output / "best.pt", map_location=device, weights_only=True)
     drafter.load_state_dict(state["drafter"])
+    # BF16 shape-dependent target argmax flips were observed on real Qwen.
+    # Validate the cached verifier using FP32 arithmetic on the same stored weights.
+    target.float()
+    report["verification_target_arithmetic"] = "float32; stored BF16 weights upcast"
     report["rollout_benchmark"] = benchmark(drafter, target, tokenizer, data["validation"], mask_id)
-    report["completed"] = step == cfg.steps
+    report["training_completed"] = cycle_step == cfg.steps
+    report["verification_passed"] = all(
+        x["identical_to_target_greedy"] for x in report["rollout_benchmark"]
+    )
+    report["completed"] = report["training_completed"] and report["verification_passed"]
     report["elapsed_seconds"] = time.monotonic() - started
     report["frozen_target_has_no_gradients"] = all(p.grad is None for p in target.parameters())
     write_json(output / "report.json", report)

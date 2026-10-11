@@ -3,17 +3,37 @@
 Private repo: koogle/latent-workspace, main; direct commits and regular pushes authorized.
 
 Current priority: [DFlash-style Qwen drafting baseline](docs/dflash-baseline.md).
-The user deferred representation experiments until useful multi-token drafting is
-established. Implemented target-generated responses, new held-out source groups,
-random-anchor packed training, fixed feature K/V injection, cache-aware greedy
-verification, and acceptance/latency metrics that exclude the supplied anchor.
-67 local tests pass. `dflash-pilot-01` failed during remote module import and was
-stopped; the wrapper packaging was corrected. `dflash-pilot-02` is running on a
-hard-bounded 900-second L40S worker. Both $1.25 reservations are retained, bringing
-the total to $199.50/$200; the cap is unchanged.
-No successful training/quality/speed result is claimed yet. New trainer resume
-loading, larger response corpora, broad latency evaluation and test evaluation
-remain unexecuted. Historical layer/J-lens follow-ups below are deferred.
+Representation experiments are deferred. The aligned baseline has one known anchor
+plus seven masked proposals, target-generated labels, fixed feature K/V injection,
+random-anchor packed training and cached greedy verification.
+
+Executed: 380 usable train responses, 47 fresh validation responses and 48 reserved
+test prompts (no test responses/metrics). The initial 1000-update fit reached only
+0.145 accepted NEW tokens / 7; training-sample NLL 7.747, validation 7.820. It is
+not useful drafting. The original BF16 rollout check failed. A fixed-input GPU
+replay isolated a BF16 AR/block argmax flip (0.0625 top-two margin, 0.25 logit
+change); FP32 arithmetic matched all three diagnostic prompts. The CLI and future
+rollout checks now use FP32 on upcast stored BF16 weights. BF16 parity and any
+speedup remain unestablished.
+
+`dflash-fit-01` is running: continue the SAME model/AdamW/RNG and exact teacher
+cache for up to 20000 additional updates (goal 21000), with a declared new cosine
+cycle. No architecture, feature-layer, mask-policy or data changes. This addresses
+underfitting before further study. A readout-scale audit found 1.13 versus target
+7.12 RMS, but its analytical CE bound is essentially zero: it does NOT establish
+a loss floor or justify calling normalization the cause.
+
+69 local tests pass, including exact next-update restoration of the new trainer's
+optimizer/sampler. The real checkpoint CLI ran on CPU. Original pilot and diagnostic
+artifacts are retained; new continuation results are pending. `dflash-pilot-01`
+failed during remote import and was explicitly stopped; its reservation remains.
+The user-authorized original allocation range was $200–$500. The initial conservative
+$200 ceiling has now been raised to that original $500 upper bound for the drafting-
+first continuation; cumulative reservations are $205, not a confirmed bill.
+
+Pending: finish/interpret the optimization continuation; then determine the target-
+response data scale from fitting versus held-out acceptance. Do not claim a working
+fast drafter or resume layer/J-space experiments based only on decreasing loss.
 
 The [trained conditioning study is complete](results/conditioning-findings.md).
 Executed: 96 residual/attention probes across two seeds; nine Qwen2.5-0.5B decoder
@@ -57,9 +77,10 @@ Tiny-set fitting works, but this does not establish enough data for a useful dra
 or convergence at 3072 windows. Retain larger-data work as the generalization
 baseline; do not replace it with the tiny memorization sets.
 
-55 local tests pass, including exact dropout resume and compact feature caching.
+At the small-control checkpoint, 55 local tests passed, including exact dropout
+resume and compact feature caching.
 All four controls completed actual frozen-Qwen GPU training. Source, ordered
 subsets, split hashes, supervision counts and full-training diagnostics verified.
-All Modal work completed; cumulative reservations $197/$200, not billed usage.
-Only $3 remains under the current conservative cap, below another $5 L40S reservation.
+That completed checkpoint had $197 reserved against the initial $200 allocation.
+See the current drafting-first status above for subsequent reservations and cap.
 Checkpoints: `/runs/small-layer-controls-01/{baseline,dropout,null,dropout-null}/`.

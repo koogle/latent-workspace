@@ -6,7 +6,7 @@ from pathlib import Path
 
 import modal
 
-from latent_workspace.budget import TIMEOUT_SECONDS, reserve
+from latent_workspace.budget import CAP_USD, TIMEOUT_SECONDS, reserve
 from latent_workspace.config import Config
 
 app = modal.App("latent-workspace-qwen")
@@ -97,7 +97,7 @@ def main(
     if gpu not in ("L40S", "H100"):
         raise ValueError("choose L40S or H100")
     amount = reserve("artifacts/budget.json", run_id, gpu)
-    print(f"Reserved ${amount:.2f} against the $200 local allocation cap.")
+    print(f"Reserved ${amount:.2f} against the ${CAP_USD:g} local allocation cap.")
     function = l40s if gpu == "L40S" else h100
     result = function.remote(cfg.to_dict(), run_id, resume_from)
     destination = Path("results") / f"{run_id}.json"

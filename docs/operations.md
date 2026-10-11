@@ -30,7 +30,8 @@ uv run modal volume get latent-workspace-qwen-runs /smoke-l40s-01 artifacts/smok
 Each run has a 3600-second remote timeout, no automatic retry, and one GPU.
 `max_seconds` stops the training loop earlier and leaves cleanup time. The local
 `artifacts/budget.json` ledger reserves the full timeout at conservative allocation
-rates ($5/h L40S, $12/h H100) against a $200 cap. Failed launches retain reservations.
+rates ($5/h L40S, $12/h H100). The cap was initially $200; the drafting-first
+continuation uses the original user-authorized upper bound of $500. Failed launches retain reservations.
 These are allocation assumptions, **not live prices or an account-wide billing
 cap**; storage/build costs and runs from other machines are not enforced by this
 ledger. Keep the ledger when moving machines and check actual Modal usage. No
@@ -102,10 +103,17 @@ compatibility audit and parent model revision in the report.
 `uv run modal run modal_dflash.py --config configs/dflash-pilot.json --run-id dflash-pilot-01`
 uses a separate short worker (900-second actual timeout, no retries, one L40S).
 The same locked ledger reserves $1.25 for its full bound; old 3600-second jobs still
-reserve $5. Neither the cap nor existing reservations are reset. The worker shares
+reserve $5. Existing reservations are never reset. The worker shares
 the dedicated project volumes and locked uv image. See the baseline protocol for
 its data/evaluation gates and the distinction between a smoke run and useful drafting.
 
 The DFlash wrapper defines its image and volumes directly: importing another local
 entrypoint module failed in the remote worker because that file was not packaged.
 The failed `dflash-pilot-01` app was explicitly stopped; reservation retained.
+
+
+`modal_dflash.py --long-run` selects an actual 3600-second worker; its reservation
+is $5. `configs/dflash-fit.json` resumes the saved baseline/AdamW/RNG on the exact
+cached teacher corpus with an explicit new cosine cycle. Cumulative reservations
+at launch: $205/$500; the cap follows the upper end of the original authorized
+$200–$500 plan. Reservations remain conservative allocations, not billed usage.

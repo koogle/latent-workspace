@@ -45,3 +45,13 @@
 - 2026-10-11: Add a genuinely shorter 900-second worker and reserve its full bound
   at the existing $5/hour rate ($1.25). Preserve the $200 cap and all old reservations;
   do not shorten a reservation while leaving a longer worker timeout in place.
+
+- 2026-10-11: Initial DFlash-style training remains underfit. Continue the SAME
+  baseline on its exact cached target-response corpus before architectural work.
+  Restore AdamW/RNG and declare a new cosine schedule; measure fitting and acceptance.
+- 2026-10-11: Honor the original user-authorized $200–$500 allocation range by moving
+  from the initial conservative $200 ledger ceiling to its $500 upper bound. Retain
+  all old reservations; reserve only one additional bounded $5 training job now.
+- 2026-10-11: BF16 GPU AR/block parity failed due to a reproduced fixed-input target
+  argmax flip. Use FP32 arithmetic as the correctness reference; retain the failure,
+  do not label the initial BF16 rollout successful or claim a validated speedup.

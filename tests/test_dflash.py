@@ -139,3 +139,52 @@ def test_verifier_commits_fully_accepted_blocks_without_skipping_bonus_tokens():
     assert result["tokens"] == expected
     assert result["accepted_new_draft_tokens"] == [3, 3, 3]
     assert result["verification_calls"] == 3
+
+
+def test_continuation_restores_optimizer_and_exact_next_training_update():
+    import copy
+
+    from latent_workspace.dflash_train import restore_continuation
+
+    target, draft = fixture()
+    cfg = draft.cfg
+    tokens = torch.randint(31, (1, 12))
+    memory = features(target.model(tokens, output_hidden_states=True), cfg.layers)
+    optimizer = torch.optim.AdamW(draft.parameters(), lr=cfg.learning_rate)
+    generator = torch.Generator().manual_seed(17)
+
+    def update(head, opt, rng):
+        anchors = torch.randint(3, 8, (1, 2), generator=rng)
+        opt.zero_grad(set_to_none=True)
+        block_loss(head, target, tokens, memory, anchors, 30)[0].backward()
+        opt.step()
+
+    update(draft, optimizer, generator)
+    state = copy.deepcopy(
+        {
+            "step": 1,
+            "drafter": draft.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "rng": torch.get_rng_state(),
+            "sampler_rng": generator.get_state(),
+            "cuda_rng": [],
+        }
+    )
+    update(draft, optimizer, generator)
+    restored = DFlashDrafter(target.config, cfg)
+    restored_optimizer = torch.optim.AdamW(restored.parameters(), lr=1.0)
+    restored_generator = torch.Generator()
+    previous = {"config": cfg.to_dict(), "curve": [{"step": 1}]}
+    restore_continuation(cfg, previous, state, restored, restored_optimizer, restored_generator)
+    update(restored, restored_optimizer, restored_generator)
+    for key, tensor in draft.state_dict().items():
+        torch.testing.assert_close(tensor, restored.state_dict()[key], atol=0, rtol=0)
+    with pytest.raises(ValueError, match="block_size"):
+        restore_continuation(
+            replace(cfg, block_size=8),
+            previous,
+            state,
+            restored,
+            restored_optimizer,
+            restored_generator,
+        )
