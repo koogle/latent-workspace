@@ -33,7 +33,11 @@ def execute(config, run_id, resume_from):
     cfg = Config(**config).validate()
     output = f"/runs/{resume_from or run_id}"
     try:
-        if cfg.study_eval_only:
+        if cfg.study_layer_controls:
+            from latent_workspace.small_controls import run_controls
+
+            report = run_controls(cfg, output, on_checkpoint=runs.commit)
+        elif cfg.study_eval_only:
             from latent_workspace.posthoc import evaluate_study
 
             report = evaluate_study(cfg, output)

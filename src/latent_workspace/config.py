@@ -11,6 +11,10 @@ class Config:
     normalize_token_inputs: bool = False
     position_readout: bool = False
     residual_readout: bool = False
+    layer_dropout: float = 0.0
+    null_attention: bool = False
+    study_layer_controls: bool = False
+    study_train_diagnostics: int = 96
     study_scan_only: bool = False
     scan_attention: bool = False
     study_eval_only: bool = False
@@ -63,6 +67,10 @@ class Config:
     )
 
     def validate(self):
+        if not 0 <= self.layer_dropout <= 1 or self.study_train_diagnostics < 3:
+            raise ValueError("invalid layer dropout or training diagnostic count")
+        if self.study_layer_controls and (self.study_resume or self.evaluate_test):
+            raise ValueError("layer control suite cannot resume or evaluate test")
         if self.study_sizes and (
             any(n <= 0 or n % 3 or n > self.train_examples for n in self.study_sizes)
             or not self.study_checkpoints

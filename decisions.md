@@ -28,3 +28,7 @@
   checked protocol. Retain all-layer residual conditioning as the strongest
   tested diffusion memory, but do not claim a diffusion advantage or useful
   generation. Use fresh held-out data for subsequent adaptive experiments.
+- 2026-10-11: Follow the fixed-budget study with dense small-data convergence
+  diagnostics and all-layer dropout/null-attention controls. Retain the existing
+  validation slice for exploration only; do not adapt on another test evaluation.
+  See [protocol](docs/small-data-controls.md).

@@ -33,3 +33,9 @@ Remaining:
 - More J-lens calibration/convergence and readout controls before broader claims
   about the paper's J-space representation.
 - No collaborative module or native backbone pretraining in this phase.
+
+Follow-up in progress: `small-layer-controls-01`, one bounded L40S suite, 96/768/3072
+windows and four all-layer diffusion controls. Full train curves, dense checkpoints;
+no new test evaluation. Local checks: 53 tests pass. Reservations are now $197/$200
+(conservative allocations, not billed cost). Results are pending; see
+[protocol](docs/small-data-controls.md).

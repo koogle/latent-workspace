@@ -144,7 +144,7 @@ def run_study(cfg, output, on_checkpoint=None):
         "window_audit": window_audit,
         "tokenizer_compatibility": tokenizer_compatibility,
         "source_sha256": source_hash.hexdigest(),
-        "test_status": "sealed; no test losses or accuracy computed",
+        "test_status": "no test losses or accuracy computed in this run",
         "curves": {},
         "readout_norm_weight_rms": float(
             backbone.model.model.norm.weight.float().square().mean().sqrt()
@@ -191,11 +191,20 @@ def run_study(cfg, output, on_checkpoint=None):
         atomic_save(output / "jacobians.pt", backbone.jacobians)
         backbone.conditioning = "jspace"
         persist()
+    subsets = nested_indices(
+        metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed, priority
+    )
+    cache_indices = (
+        torch.arange(len(data["train"])) if cfg.study_scan_only else subsets[max(subsets)]
+    )
+    lookup = torch.full((len(data["train"]),), -1, dtype=torch.long)
+    lookup[cache_indices] = torch.arange(len(cache_indices))
     memories = {}
     for split in ("train", "validation"):
         destination = None
         offset = 0
-        for rows in data[split].split(cfg.batch_size):
+        cache_rows = data[split][cache_indices] if split == "train" else data[split]
+        for rows in cache_rows.split(cfg.batch_size):
             features = backbone.encode(rows[:, : cfg.context_length].to(device))[0].cpu()
             if not cfg.scan_attention and cfg.variants[0].split(":")[1] in (
                 "multi",
@@ -206,7 +215,7 @@ def run_study(cfg, output, on_checkpoint=None):
                 features = features[:, : len(cfg.layers)]
             if destination is None:
                 destination = torch.empty(
-                    (len(data[split]), *features.shape[1:]), dtype=features.dtype
+                    (len(cache_rows), *features.shape[1:]), dtype=features.dtype
                 )
             destination[offset : offset + len(rows)].copy_(features)
             offset += len(rows)
@@ -242,9 +251,6 @@ def run_study(cfg, output, on_checkpoint=None):
         result["elapsed_seconds"] = time.monotonic() - start
         persist()
         return result
-    subsets = nested_indices(
-        metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed, priority
-    )
     variant = cfg.variants[0]
     for size, subset in subsets.items():
         seed_all(cfg.seed)
@@ -256,7 +262,10 @@ def run_study(cfg, output, on_checkpoint=None):
         per_domain = size // len(DOMAINS)
         diagnostic_indices = torch.cat(
             [
-                torch.arange(i * per_domain, i * per_domain + min(32, per_domain))
+                torch.arange(
+                    i * per_domain,
+                    i * per_domain + min(cfg.study_train_diagnostics // len(DOMAINS), per_domain),
+                )
                 for i in range(len(DOMAINS))
             ]
         )
@@ -303,6 +312,8 @@ def run_study(cfg, output, on_checkpoint=None):
                 "variants",
                 "position_readout",
                 "residual_readout",
+                "layer_dropout",
+                "null_attention",
                 "normalize_token_inputs",
             )
             for key in critical:
@@ -341,12 +352,14 @@ def run_study(cfg, output, on_checkpoint=None):
                 persist()
                 return result
             head.train()
+            if hasattr(head, "workspace"):
+                head.workspace.dropout_step = step
             index = torch.randint(size, (cfg.batch_size,), generator=sampler)
             optimizer.zero_grad(set_to_none=True)
             loss, _, mask = loss_and_logits(
                 head,
                 backbone,
-                memory[subset[index]].to(device),
+                memory[lookup[subset[index]]].to(device),
                 selected[index, cfg.context_length :].to(device),
             )
             if not torch.isfinite(loss):
@@ -359,7 +372,7 @@ def run_study(cfg, output, on_checkpoint=None):
                 train_metric = cached_metrics(
                     head,
                     backbone,
-                    memory[subset[diagnostic_indices]],
+                    memory[lookup[subset[diagnostic_indices]]],
                     selected[diagnostic_indices, cfg.context_length :],
                     cfg,
                     device,
@@ -371,6 +384,8 @@ def run_study(cfg, output, on_checkpoint=None):
                     )
                 row = {
                     "step": step,
+                    "expected_training_passes": step * cfg.batch_size / size,
+                    "training_diagnostic_windows": len(diagnostic_indices),
                     "target_token_slots_seen": step * cfg.batch_size * cfg.block_size,
                     "masked_supervised_tokens_seen": masked_exposures,
                     "training_sample_nll_by_position": train_metric["nll_by_position"],

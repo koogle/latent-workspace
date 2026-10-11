@@ -12,3 +12,5 @@ in the owning guide, not only in conversation.
 Training budget and learning-curve decisions: [Data sufficiency](../data-budget.md).
 
 Trained layer and J-lens comparisons: [Conditioning study](../conditioning-study.md).
+
+Small-set fitting and layer dropout/null controls: [Protocol](../small-data-controls.md).

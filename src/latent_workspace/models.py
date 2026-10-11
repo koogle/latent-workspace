@@ -14,7 +14,13 @@ class Workspace(nn.Module):
         self.depth = nn.Parameter(torch.randn(len(cfg.layers), cfg.width) * 0.02)
         self.position = nn.Parameter(torch.randn(cfg.memory_tokens, cfg.width) * 0.02)
         self.slots = nn.Parameter(torch.randn(cfg.slots, cfg.width) * 0.02)
-        self.attend = nn.MultiheadAttention(cfg.width, cfg.heads, batch_first=True)
+        self.attend = nn.MultiheadAttention(
+            cfg.width, cfg.heads, batch_first=True, add_zero_attn=cfg.null_attention
+        )
+        self.layer_dropout = cfg.layer_dropout
+        self.dropout_seed = cfg.seed
+        self.dropout_step = 0
+        self.null_attention = cfg.null_attention
         self.norm = nn.LayerNorm(cfg.width)
         self.ff = nn.Sequential(
             nn.Linear(cfg.width, cfg.width * 4), nn.GELU(), nn.Linear(cfg.width * 4, cfg.width)
@@ -27,7 +33,18 @@ class Workspace(nn.Module):
         x = x + self.depth[:depths][None, :, None] + self.position[:positions][None, None]
         x = x.reshape(b, depths * positions, -1)
         slots = self.slots.unsqueeze(0).expand(b, -1, -1)
-        slots = self.norm(slots + self.attend(slots, x, x, need_weights=False)[0])
+        padding = None
+        if self.training and self.layer_dropout:
+            # Independent, step-indexed RNG preserves corruption/sampling and resumes.
+            generator = torch.Generator().manual_seed(self.dropout_seed + 9191 + self.dropout_step)
+            dropped = torch.rand(b, depths, generator=generator) < self.layer_dropout
+            if not self.null_attention:
+                dropped[dropped.all(dim=1), -1] = False
+            padding = dropped.repeat_interleave(positions, dim=1).to(x.device)
+        # add_zero_attn appends zero K/V *after* projection, with a valid mask entry.
+        slots = self.norm(
+            slots + self.attend(slots, x, x, key_padding_mask=padding, need_weights=False)[0]
+        )
         return slots + self.ff(slots)
 
 

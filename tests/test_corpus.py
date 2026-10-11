@@ -100,7 +100,7 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch, mod
     monkeypatch.setattr(study, "prepare", lambda *a: (data, {"domain_ranges": ranges}))
     result = study.run_study(cfg, tmp_path)
     assert result["completed"]
-    assert "sealed" in result["test_status"]
+    assert "no test losses" in result["test_status"]
     if mode == "scan":
         assert set(result["layer_scan"]["layers"]) == {"1", "2", "attention1", "attention2"}
         assert result["curves"] == {}
