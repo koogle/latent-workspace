@@ -8,7 +8,7 @@ import torch
 
 from .backbone import FrozenBackbone
 from .corpus import DOMAINS, prepare
-from .evaluate import evaluate
+from .evaluate import evaluate, generate, teacher_baseline
 from .models import BlockHead, loss_and_logits
 from .scan import cached_metrics
 from .train import atomic_save, checkpoint, seed_all, write_json
@@ -55,6 +55,11 @@ def run_study(cfg, output, on_checkpoint=None):
         "readout_norm_weight_rms": float(
             backbone.model.model.norm.weight.float().square().mean().sqrt()
         ),
+    }
+
+    result["teacher_validation_by_domain"] = {
+        domain: teacher_baseline(backbone, data["validation"][a:b], cfg, device)
+        for domain, (a, b) in metadata["domain_ranges"]["validation"].items()
     }
 
     def persist():
@@ -148,6 +153,15 @@ def run_study(cfg, output, on_checkpoint=None):
                     f"Data study size={size} step={step} validation_nll={row['macro_validation_nll']:.4f} supervised_tokens={masked_exposures}",
                     flush=True,
                 )
+        curve["validation_samples"] = {}
+        for domain, (a, _) in metadata["domain_ranges"]["validation"].items():
+            prefix = data["validation"][a : a + 1, : cfg.context_length].to(device)
+            tokens = generate(head, backbone, prefix, max_new_tokens=24)
+            curve["validation_samples"][domain] = {
+                "prefix": backbone.tokenizer.decode(prefix[0][prefix[0] >= 0].tolist()),
+                "generated": backbone.tokenizer.decode(tokens),
+            }
+        persist()
         del head, optimizer, memory
     result["completed"] = True
     result["elapsed_seconds"] = time.monotonic() - start

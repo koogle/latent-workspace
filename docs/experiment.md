@@ -80,3 +80,21 @@ Reported per-example standard errors treat windows as independent and therefore
 do not account for within-article correlation. Treat them as descriptive only.
 Confirmatory inference needs article-cluster resampling, multiple seeds, and an
 untouched test set after layer/configuration selection. The pilot is exploratory.
+
+## Mixed-domain data gate (supersedes WikiText-only scope)
+
+`corpus=mixed` trains one decoder on balanced prose, code and translation windows.
+Sources: [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext),
+[CodeParrot clean](https://huggingface.co/datasets/codeparrot/codeparrot-clean),
+and [WMT14 de-en](https://huggingface.co/datasets/wmt/wmt14). Data revisions and
+window/group hashes are recorded. Code repositories map deterministically to
+80/10/10 train/validation/test buckets. Official prose/translation partitions
+are retained; cross-partition normalized exact duplicates are quarantined.
+Translation losses cover German continuation tokens only, with masked left
+padding and a bounded English-to-German prompt. Long prompts are truncated to
+the context budget; this is not a full translation benchmark. At most four
+windows per source record are collected; repositories can contain multiple files.
+
+Validation controls checkpoint/layer/budget choices. `evaluate_test=false` is the
+default, and data studies require it. Test tensors may be prepared and deduplicated
+without evaluating their losses. See [data-budget protocol](data-budget.md).
