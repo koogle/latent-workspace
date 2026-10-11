@@ -42,3 +42,33 @@ so code-only changes reuse the dependency image. Results JSON is returned to the
 local results/ directory; model heads, optimizer/RNG state, configuration, dataset
 hashes and model revisions live on the dedicated runs volume. Model and corpus
 caches live on a separate cache volume. Checkpoints exclude frozen Qwen weights.
+
+## Checkpoint recovery and provenance
+
+J-lens calibration saves running matrix sums after each completed prefix. A
+resume continues at that prefix count. Decoder checkpoints include AdamW state,
+CPU/CUDA RNG states, sampling-generator state, completed update count, lens
+matrices and resolved model revision. Resume rejects changed config or source
+fingerprints; use the original source checkout to resume a historical run.
+The feature cache is per run and config. Interrupted cache writes currently need
+manual removal of `features.pt` before resume; completed head/calibration
+checkpoints use atomic replacement.
+
+`results/*-manifest.json` and completed run JSON record immutable model/dataset
+commits, SHA-256 of the Python package sources, selected layers, seed, calibration
+window indices and document hashes. GPU profile results include actual GPU names.
+The first smoke predates source-fingerprint reporting and is labeled accordingly.
+
+`uv run python scripts/summarize.py results/RUN.json --output results/RUN.md`
+produces a readable evidence table and saved generation samples. A text generation
+command for downloaded checkpoints is:
+
+```bash
+uv run latent-workspace generate --checkpoint artifacts/RUN/diffusion-multi.pt \
+  --prompt 'The capital of France is' --tokens 32
+```
+
+Training and generation can use CPU for correctness checks; reported benchmarks
+come from Modal GPUs. The tests verify real tiny-Qwen hooks and cached prefix
+updates, exact Jacobians against direct autograd, masked-target isolation, frozen
+weights, 4/8/16-token sampling, and exact next-update checkpoint restoration.

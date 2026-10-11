@@ -66,3 +66,17 @@ conditions to a subset of extracted `layers`. Empty means all extracted layers.
 Generation metrics also report greedy iterative block accuracy separately from
 all-masked one-shot accuracy. Generation latency computes J-lens readouts only
 for the J-space condition, not for raw-state comparisons.
+
+## Pilot provenance and statistical limits
+
+The initial larger pilot uses 4096 train windows from 292 WikiText-103 articles
+and 256 validation windows from 22 articles. Calibration samples 100 training
+window indices with a fixed independent seed and uses up to the first 128 prefix
+tokens per window; it does not use target tokens. The selected multi-layer and
+J-lens conditions use layers 6/12/18, excluding the final state as a stronger test
+of intermediate information. The final-only comparator uses layer 24.
+
+Reported per-example standard errors treat windows as independent and therefore
+do not account for within-article correlation. Treat them as descriptive only.
+Confirmatory inference needs article-cluster resampling, multiple seeds, and an
+untouched test set after layer/configuration selection. The pilot is exploratory.
