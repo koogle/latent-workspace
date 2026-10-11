@@ -1,7 +1,6 @@
-> **Moved to [LM Exploration](https://github.com/koogle/0-to-llm/tree/main/exploration/latent-workspace).**
-> Continued work belongs in the consolidated repository. This repository is retained
-> for historical reference; archiving is pending. See the
-> [migration notes](https://github.com/koogle/0-to-llm/blob/main/docs/consolidation.md).
+> **Active research repository — iteration continues here.**
+> A snapshot was imported into [LM Exploration](https://github.com/koogle/0-to-llm/tree/main/exploration/latent-workspace).
+> This repository is intentionally kept active; later work here is not automatically synchronized to that snapshot.
 
 # Latent workspace block generation
 
