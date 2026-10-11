@@ -178,3 +178,32 @@ Current bounded runs extend the 196k batch-128 checkpoint to 8k/16k updates and
 repeat 49k/196k through 4k with seeds 43/44. Roughly 200k windows is a candidate
 pilot pool, not an established minimum or a production-quality recommendation.
 All comparisons remain exploratory on 192 validation windows and sealed test.
+
+## Completed repeated-seed outcome and budget decision
+
+Seeds 42/43/44 all favor 196k over 49k at a maximum of 4k batch-128 updates.
+Best observed checkpoints are at 2k for 49k and 4k for 196k in every seed:
+
+| Seed | 49k best NLL | 196k best NLL | Difference |
+| ---: | ---: | ---: | ---: |
+| 42 | 5.511 | 5.264 | -0.247 |
+| 43 | 5.639 | 5.280 | -0.359 |
+| 44 | 5.557 | 5.348 | -0.209 |
+
+Mean paired difference is -0.272. These share the same small validation set;
+three training seeds do not remove validation-selection bias or uncertainty
+about new source groups. Exact window audits pass for every new run.
+
+Seed-42 continuation preserves optimizer and RNG state. At 8k/16k updates NLL
+is 5.222/5.201, versus 5.264 at 4k. The final run has 8,192,000 target-token slot
+exposures and 5,120,797 actually supervised masked positions. Final consecutive
+Qwen agreement is 1.099/4 and full-block agreement 4.7%. Generated translation
+remains malformed and prose/code are unreliable. Later-position training NLL
+also remains high, so this is not solely a held-out overfitting problem.
+
+**Decision:** freeze the 196,608-window mixed pool for the next decoder/conditioning
+diagnostics. Use batch 128 and 4k updates as an initial comparison budget, with
+validation-selected checkpoints; selectively extend changes that improve both
+loss and generation. Do not spend on another corpus expansion yet. This is a
+workable diagnostic budget, not a minimum sufficient dataset or a quality result.
+No larger Qwen or J-space/all-layer hypothesis is validated by these runs.

@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
+matplotlib.rcParams["svg.hashsalt"] = "latent-workspace-data-scaling"
 import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -126,6 +127,11 @@ fig.text(
 )
 fig.tight_layout(rect=(0, 0.04, 1, 0.94))
 for suffix in ("png", "svg"):
-    fig.savefig(ROOT / "results" / f"data-scaling.{suffix}", dpi=170)
+    output = ROOT / "results" / f"data-scaling.{suffix}"
+    fig.savefig(output, dpi=170, metadata={"Date": None} if suffix == "svg" else None)
+    if suffix == "svg":
+        output.write_text(
+            "\n".join(line.rstrip() for line in output.read_text().splitlines()) + "\n"
+        )
 (ROOT / "results" / "data-scaling-summary.json").write_text(json.dumps(records, indent=2) + "\n")
 print(json.dumps(records, indent=2))

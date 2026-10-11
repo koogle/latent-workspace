@@ -48,5 +48,55 @@
     "best_validation_nll": 5.264228979746501,
     "final_step": 4000,
     "final_validation_nll": 5.264228979746501
+  },
+  {
+    "run": "data-continue-01",
+    "seed": 42,
+    "batch": 128,
+    "windows": 196608,
+    "best_step": 16000,
+    "best_validation_nll": 5.200833638509114,
+    "final_step": 16000,
+    "final_validation_nll": 5.200833638509114
+  },
+  {
+    "run": "data-seed43-01",
+    "seed": 43,
+    "batch": 128,
+    "windows": 49152,
+    "best_step": 2000,
+    "best_validation_nll": 5.638756275177002,
+    "final_step": 4000,
+    "final_validation_nll": 5.753170649210612
+  },
+  {
+    "run": "data-seed43-01",
+    "seed": 43,
+    "batch": 128,
+    "windows": 196608,
+    "best_step": 4000,
+    "best_validation_nll": 5.279750029246013,
+    "final_step": 4000,
+    "final_validation_nll": 5.279750029246013
+  },
+  {
+    "run": "data-seed44-01",
+    "seed": 44,
+    "batch": 128,
+    "windows": 49152,
+    "best_step": 2000,
+    "best_validation_nll": 5.556931972503662,
+    "final_step": 4000,
+    "final_validation_nll": 5.712105433146159
+  },
+  {
+    "run": "data-seed44-01",
+    "seed": 44,
+    "batch": 128,
+    "windows": 196608,
+    "best_step": 4000,
+    "best_validation_nll": 5.34785000483195,
+    "final_step": 4000,
+    "final_validation_nll": 5.34785000483195
   }
 ]

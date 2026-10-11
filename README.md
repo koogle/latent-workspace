@@ -57,7 +57,8 @@ more data improved validation loss, but sample generations remain degenerate.
 No sufficient training budget or useful drafter quality is established yet.
 
 
-The [clean follow-up curves](results/data-scaling.png) now compare up to 196,608
-mixed-domain windows. Best seed-42 validation NLL is 5.264, but consecutive Qwen
-agreement is only 1.06/4 tokens: useful block generation is still unestablished.
-See [current work](OPEN_WORK.md) for repeated seeds and optimization continuation.
+The [clean follow-up curves](results/data-scaling.md) compare up to 196,608
+mixed-domain windows across three seeds. More data helps consistently, but a
+16k-update continuation still has NLL 5.201 and consecutive Qwen agreement only
+1.10/4 tokens. Keep the 196k pool for decoder diagnostics; useful block generation
+and a sufficient training-data budget remain unestablished. Test stays sealed.

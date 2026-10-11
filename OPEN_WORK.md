@@ -14,12 +14,18 @@ At batch 128, seed 42, best NLL is 5.511 for 49k (2k updates) and 5.264 for 196k
 (4k updates). The latter agrees with Qwen for only 1.06 consecutive tokens / 4.
 See [curves](results/data-scaling.png). This is not a sufficient quality result.
 
-Running: exact checkpoint continuation of 196k to 8k/16k updates, plus seeds
-43/44 for the 49k/196k comparison through 4k updates. Forty-four local tests pass,
-including exact next-update study continuation. Real GPU continuation is pending.
+Completed: seeds 42/43/44 all favor 196k over 49k; the mean paired best-checkpoint
+NLL difference through 4k updates is -0.272. Exact GPU continuation reached 16k
+updates: NLL 5.201, consecutive Qwen agreement 1.099/4, full-block agreement 4.7%.
+All runs completed within bounds. Forty-four local tests pass. Full reports and
+[updated curves](results/data-scaling.md) are retained; test metrics remain sealed.
+
+Recommendation: retain 196,608 mixed-domain windows as the fixed diagnostic
+pool, use 4k updates at batch 128 for initial comparisons, and extend promising
+changes selectively. This is not enough evidence to call the data sufficient
+for useful generation. Prioritize the later-token bottleneck before more scaling.
 
 Remaining:
-- Complete repeated-seed size study and continuation; retain validation-best heads.
 - Diagnose weak later-token generalization; final-layer-only conditioning, known
   first-token anchoring, left-to-right unmasking and input normalization did not
   resolve it. Human corpus labels are still used, not Qwen distillation targets.
