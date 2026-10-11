@@ -96,3 +96,27 @@ class FrozenBackbone(nn.Module):
         return self.model(
             joined.clamp(min=0), attention_mask=joined.ge(0).long(), use_cache=False
         ).logits[:, prefix.shape[1] - 1 :]
+
+
+def compatible_tokenizers(source, target):
+    """Permit a frozen token stream only when every source token ID is preserved."""
+    import hashlib
+    import json
+
+    source_vocab, target_vocab = source.get_vocab(), target.get_vocab()
+    if any(target_vocab.get(token) != index for token, index in source_vocab.items()):
+        raise ValueError("parent tokenizer token IDs are incompatible")
+    source_spec = json.loads(source.backend_tokenizer.to_str())
+    target_spec = json.loads(target.backend_tokenizer.to_str())
+    for key in ("model", "normalizer", "pre_tokenizer", "post_processor"):
+        if source_spec.get(key) != target_spec.get(key):
+            raise ValueError(f"parent tokenizer segmentation differs: {key}")
+    return {
+        "source_vocabulary_sha256": hashlib.sha256(
+            json.dumps(source_vocab, sort_keys=True).encode()
+        ).hexdigest(),
+        "source_token_count": len(source_vocab),
+        "target_token_count": len(target_vocab),
+        "all_source_token_ids_preserved": True,
+        "note": "Reuse the exact frozen token stream. Additional target special tokens are not introduced into it.",
+    }

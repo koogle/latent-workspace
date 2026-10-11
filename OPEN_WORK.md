@@ -25,10 +25,13 @@ pool, use 4k updates at batch 128 for initial comparisons, and extend promising
 changes selectively. This is not enough evidence to call the data sufficient
 for useful generation. Prioritize the later-token bottleneck before more scaling.
 
-The conditioning J-lens smoke completed on Modal; 47 local tests pass. The
-24-layer residual/attention probe scan and final/all-residual decoder runs are
-active. Continue with selected-layer, attention and J-lens comparisons; do not
-wait for useful absolute quality before measuring the requested hypotheses.
+The conditioning and Qwen3-0.6B smokes completed on Modal; 50 local tests pass.
+The 48-probe scan completed: residual subset 18/20/17, attention subset 20/16/15.
+Final/all-residual Qwen2.5 decoder runs completed: NLL 5.390/5.259. Selected,
+single-layer, attention and J-lens decoders are training, plus matched final/all
+Qwen3-0.6B decoders. These are actual 4k-update mixed-domain training comparisons.
+Continue to completion, freeze validation-selected checkpoints, then evaluate
+chosen models/controls on test once under a recorded protocol.
 
 Remaining:
 - Diagnose weak later-token generalization; final-layer-only conditioning, known

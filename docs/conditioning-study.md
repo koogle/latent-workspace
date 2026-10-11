@@ -56,3 +56,25 @@ GPU memory remains separate. Each job retains the one-hour timeout and $5 local
 reservation, with a $200 aggregate allocation cap. Run a bounded J-lens smoke
 before full comparisons. Larger-model comparisons are separate experiments and
 must verify tokenizer/corpus compatibility before reusing token IDs.
+
+
+## Executed scan and larger-model compatibility
+
+The complete 48-probe scan selects residual layers 18/20/17 and attention layers
+20/16/15 by the predeclared offset-2–4 metric. Residual scores are close across
+17–20; attention layer 20 has a local loss dip in each domain. This is not a
+significance claim or evidence that tokens 3–4 are well represented.
+
+Qwen3-0.6B-Base revision `da87bfb608c14b7cf20ba1ce41287e8de496c0cd` passed a
+real GPU smoke. Its 28-layer final/all comparisons reuse the exact frozen corpus
+only after verifying all 151,665 source token IDs and the tokenizer model,
+normalizer, pre-tokenizer and post-processor. Four additional special tokens are
+not introduced into the frozen stream. Model family, depth, hidden width and
+trainable projection size change: this is not a pure parameter-count comparison.
+Qwen3.5-0.8B uses different tokenization and cannot reuse these token IDs.
+
+After all training finishes, record validation-selected checkpoint/run identities
+before requesting `study_eval_only=true, evaluate_test=true`. The saved-head
+suite supports multiple sources in one bounded job. Default posthoc evaluation
+remains validation-only. An integration test verifies that it opens only the
+explicitly requested split. Do not tune further on test measurements.

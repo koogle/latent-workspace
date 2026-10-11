@@ -14,6 +14,22 @@ from .train import write_json
 
 
 def evaluate_study(request, output):
+    if request.study_eval_parents:
+        from dataclasses import replace
+
+        results = {}
+        for parent in request.study_eval_parents:
+            results[parent] = evaluate_study(
+                replace(request, study_parent=parent, study_eval_parents=()),
+                Path(output) / Path(parent).name,
+            )
+        report = {
+            "evaluation_split": "test" if request.evaluate_test else "validation",
+            "studies": results,
+        }
+        Path(output).mkdir(parents=True, exist_ok=True)
+        write_json(Path(output) / "posthoc-suite.json", report)
+        return report
     source = Path(request.study_parent)
     study = json.loads((source / "study.json").read_text())
     if not study.get("completed"):
@@ -22,8 +38,17 @@ def evaluate_study(request, output):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     backbone = FrozenBackbone(cfg, device)
     saved = torch.load(source / "corpus.pt", weights_only=True)
-    validation = saved["tensors"]["validation"]
-    report = {"source_run": str(source), "test_status": "sealed", "heads": {}}
+    split = "test" if request.evaluate_test else "validation"
+    validation = saved["tensors"][split]
+    report = {
+        "source_run": str(source),
+        "evaluation_split": split,
+        "test_status": "evaluated; checkpoints selected previously on validation"
+        if request.evaluate_test
+        else "sealed",
+        "source_report_sha256": hashlib.sha256((source / "study.json").read_bytes()).hexdigest(),
+        "heads": {},
+    }
     for size in study["curves"]:
         checkpoint_path = source / f"size-{size}.pt"
         best_path = source / f"size-{size}-best.pt"
@@ -40,7 +65,7 @@ def evaluate_study(request, output):
             "domains": {},
             "anchored_samples": {},
         }
-        for domain, (a, b) in saved["metadata"]["domain_ranges"]["validation"].items():
+        for domain, (a, b) in saved["metadata"]["domain_ranges"][split].items():
             result["domains"][domain] = evaluate(
                 head, backbone, validation[a:b], cfg, device, anchor_diagnostics=True
             )

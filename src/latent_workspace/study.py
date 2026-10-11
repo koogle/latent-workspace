@@ -78,15 +78,30 @@ def run_study(cfg, output, on_checkpoint=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     seed_all(cfg.seed)
     parent = None
+    tokenizer_compatibility = None
     if cfg.study_parent:
         parent_path = Path(cfg.study_parent)
         parent = json.loads((parent_path / "study.json").read_text())
-        for key in ("model", "context_length", "block_size"):
+        for key in ("context_length", "block_size"):
             if cfg.to_dict()[key] != parent["config"][key]:
                 raise ValueError(f"parent corpus incompatible: {key}")
-        cfg.model_revision = parent["config"]["model_revision"]
+        if cfg.model == parent["config"]["model"]:
+            cfg.model_revision = parent["config"]["model_revision"]
+        elif not cfg.allow_compatible_backbone_change:
+            raise ValueError("parent model differs; explicit compatible-backbone reuse required")
     backbone = FrozenBackbone(cfg, device)
     cfg.model_revision = backbone.revision
+    if parent and cfg.model != parent["config"]["model"]:
+        from transformers import AutoTokenizer
+
+        from .backbone import compatible_tokenizers
+
+        source_tokenizer = AutoTokenizer.from_pretrained(
+            parent["config"]["model"], revision=parent["config"]["model_revision"]
+        )
+        tokenizer_compatibility = compatible_tokenizers(source_tokenizer, backbone.tokenizer)
+        tokenizer_compatibility["parent_model"] = parent["config"]["model"]
+        tokenizer_compatibility["parent_revision"] = parent["config"]["model_revision"]
     priority = None
     if parent:
         base = torch.load(parent_path / "corpus.pt", weights_only=True)
@@ -127,6 +142,7 @@ def run_study(cfg, output, on_checkpoint=None):
         "config": cfg.to_dict(),
         "data": metadata,
         "window_audit": window_audit,
+        "tokenizer_compatibility": tokenizer_compatibility,
         "source_sha256": source_hash.hexdigest(),
         "test_status": "sealed; no test losses or accuracy computed",
         "curves": {},

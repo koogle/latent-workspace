@@ -165,3 +165,23 @@ def test_known_first_token_drafting_preserves_qwen_choice():
             )
             torch.testing.assert_close(proposed[:, 0], expected)
             assert proposed.shape == (2, 4)
+
+
+def test_cross_backbone_token_ids_and_segmentation_must_match():
+    import json
+
+    from latent_workspace.backbone import compatible_tokenizers
+
+    def tokenizer(vocab, pre="same"):
+        return SimpleNamespace(
+            get_vocab=lambda: vocab,
+            backend_tokenizer=SimpleNamespace(to_str=lambda: json.dumps({"pre_tokenizer": pre})),
+        )
+
+    source = tokenizer({"a": 0, "b": 1})
+    target = tokenizer({"a": 0, "b": 1, "<extra>": 2})
+    assert compatible_tokenizers(source, target)["all_source_token_ids_preserved"]
+    with pytest.raises(ValueError, match="token IDs"):
+        compatible_tokenizers(source, tokenizer({"a": 1, "b": 0}))
+    with pytest.raises(ValueError, match="segmentation"):
+        compatible_tokenizers(source, tokenizer({"a": 0, "b": 1}, "different"))

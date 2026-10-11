@@ -7,12 +7,14 @@ from pathlib import Path
 class Config:
     model: str = "Qwen/Qwen2.5-0.5B"
     model_revision: str = "main"
+    allow_compatible_backbone_change: bool = False
     normalize_token_inputs: bool = False
     position_readout: bool = False
     residual_readout: bool = False
     study_scan_only: bool = False
     scan_attention: bool = False
     study_eval_only: bool = False
+    study_eval_parents: tuple[str, ...] = ()
     study_resume: str = ""
     study_reference: str = ""
     study_parent: str = ""
@@ -133,7 +135,14 @@ class Config:
     @classmethod
     def load(cls, path):
         values = json.loads(Path(path).read_text())
-        for key in ("layers", "selected_layers", "variants", "study_sizes", "study_checkpoints"):
+        for key in (
+            "layers",
+            "selected_layers",
+            "variants",
+            "study_sizes",
+            "study_checkpoints",
+            "study_eval_parents",
+        ):
             if key in values:
                 values[key] = tuple(values[key])
         return cls(**values).validate()

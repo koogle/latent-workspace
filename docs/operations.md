@@ -88,3 +88,10 @@ Use a new run ID for each continuation to preserve the parent's artifacts.
 Large raw study reports may be gzip-compressed in results; this is lossless JSON
 archival. `scripts/plot_data_scaling.py` reads either JSON or JSON.gz and verifies
 matching held-out hashes/groups and critical architecture fields before plotting.
+
+
+The all-24-layer conditioning runs request 128 GiB host RAM to cache up to three
+representation planes (raw residual, attention, J-lens) for 196k windows. They
+retain the same bounded L40S reservation/timeout. Cross-backbone corpus reuse is
+opt-in and rejects changed source token IDs or base tokenization; it records the
+compatibility audit and parent model revision in the report.
