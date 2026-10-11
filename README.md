@@ -30,6 +30,9 @@ results are persisted. A smoke test establishes plumbing, not model quality.
   reproduce later, **not** an implementation or quality claim for this code.
 - [Qwen2.5-0.5B model card](https://huggingface.co/Qwen/Qwen2.5-0.5B).
 
+A [BibTeX bibliography](references/papers.bib) and [measured run evidence](results/README.md)
+are retained in the repository.
+
 See [experiment protocol](docs/experiment.md), [knowledge index](docs/knowledge/INDEX.md),
 and [open work](OPEN_WORK.md). All dependencies and files belong to this project;
 it has no connection to the Age of Agents game.

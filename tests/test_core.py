@@ -136,3 +136,25 @@ def test_invalid_configs():
         replace(tiny_config(), block_size=0).validate()
     with pytest.raises(ValueError):
         replace(tiny_config(), variants=("diffusion:layer99",)).validate()
+
+
+@pytest.mark.parametrize("length", [4, 8, 16])
+@pytest.mark.parametrize("steps", [1, 2, 4, 8])
+def test_sampling_commits_every_position_without_overwriting(length, steps):
+    class FixedHead:
+        kind = "diffusion"
+        cfg = SimpleNamespace(block_size=length, diffusion_steps=steps)
+
+        def __init__(self):
+            self.previous_mask = None
+
+        def __call__(self, memory, embeddings, mask, noise):
+            if self.previous_mask is not None:
+                assert not (mask & ~self.previous_mask).any()
+            self.previous_mask = mask.clone()
+            expected = torch.arange(1, length + 1)[None].expand(2, -1)
+            return torch.nn.functional.one_hot(expected, 31).float() * 10
+
+    backbone = SimpleNamespace(embed=lambda ids: ids, project=lambda x: x)
+    result = sample_block(FixedHead(), backbone, torch.zeros(2, 1, 1, 1))
+    torch.testing.assert_close(result, torch.arange(1, length + 1)[None].expand(2, -1))
