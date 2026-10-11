@@ -9,7 +9,7 @@ import torch
 
 from .backbone import FrozenBackbone
 from .data import load_data
-from .evaluate import benchmark, evaluate, sync, teacher_baseline
+from .evaluate import benchmark, evaluate, generate, sync, teacher_baseline
 from .models import BlockHead, loss_and_logits
 
 
@@ -72,9 +72,13 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
             raise ValueError("resume config differs from saved config")
     train, valid, data_info = load_data(cfg, backbone.tokenizer)
     cfg.dataset_revision = data_info["dataset_revision"]
+    calibration_indices = torch.randperm(
+        len(train), generator=torch.Generator().manual_seed(cfg.seed + 1)
+    )[: cfg.jspace_prompts]
     manifest = {
         "config": cfg.to_dict(),
         "source_sha256": source_digest,
+        "calibration_indices": calibration_indices.tolist(),
         "model_revision": backbone.revision,
         "data": data_info,
         "device": device,
@@ -93,7 +97,7 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         else:
             backbone.jacobians = fit_jacobians(
                 backbone,
-                train[:, : cfg.context_length],
+                train[calibration_indices, : min(128, cfg.context_length)],
                 deadline=started + cfg.max_seconds,
                 checkpoint_path=output / "jacobian-calibration.pt",
                 on_checkpoint=on_checkpoint,
@@ -191,6 +195,13 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
         result["latency"] = benchmark(
             head, backbone, valid[:1, : cfg.context_length].to(device), tokens=16
         )
+        result["samples"] = []
+        for prompt in ("The capital of France is", "Once upon a time"):
+            prefix = backbone.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+            tokens = generate(head, backbone, prefix, max_new_tokens=16)
+            result["samples"].append(
+                {"prompt": prompt, "completion": backbone.tokenizer.decode(tokens)}
+            )
         report["variants"][variant] = result
         report["elapsed_seconds"] = time.monotonic() - started
         write_json(output / "results.json", report)

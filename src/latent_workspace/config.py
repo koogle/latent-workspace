@@ -67,6 +67,8 @@ class Config:
                 raise ValueError(f"{key} must be a positive integer")
         if self.width % self.heads or self.memory_tokens > self.context_length:
             raise ValueError("width must divide heads; memory must fit context")
+        if tuple(sorted(self.layers)) != tuple(self.layers):
+            raise ValueError("layers must be in increasing order")
         if not self.layers or len(set(self.layers)) != len(self.layers) or min(self.layers) < 1:
             raise ValueError("layers must be unique positive hidden-state indices")
         if not set(self.selected_layers).issubset(self.layers):
