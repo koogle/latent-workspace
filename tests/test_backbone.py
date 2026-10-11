@@ -134,3 +134,23 @@ def test_residual_drafter_initializes_to_pretrained_logits_and_learns(position_r
     if position_readout:
         assert not torch.equal(head.out[0].weight.grad, head.out[1].weight.grad)
     assert all(p.grad is None for p in backbone.parameters())
+
+
+def test_known_first_token_drafting_preserves_qwen_choice():
+    from dataclasses import replace
+
+    from test_core import tiny_config
+
+    from latent_workspace.models import BlockHead, sample_block
+
+    backbone = tiny_backbone()
+    cfg = replace(tiny_config(), residual_readout=True, position_readout=True)
+    backbone.cfg = cfg
+    prefix = torch.randint(31, (2, 24))
+    memory, _ = backbone.encode(prefix)
+    head = BlockHead(8, cfg, "diffusion:multi")
+    expected = backbone.model(prefix).logits[:, -1].argmax(-1)
+    for rounds in (1, 2, 4):
+        proposed = sample_block(head, backbone, memory, steps=rounds, anchor_first=True)
+        torch.testing.assert_close(proposed[:, 0], expected)
+        assert proposed.shape == (2, 4)

@@ -147,7 +147,7 @@ def loss_and_logits(head, backbone, memory, target, *, all_masked=False):
 
 
 @torch.no_grad()
-def sample_block(head, backbone, memory, temperature=0.0, steps=None):
+def sample_block(head, backbone, memory, temperature=0.0, steps=None, anchor_first=False):
     b = memory.shape[0]
     length = head.cfg.block_size
     ids = torch.zeros((b, length), dtype=torch.long, device=memory.device)
@@ -155,6 +155,11 @@ def sample_block(head, backbone, memory, temperature=0.0, steps=None):
         logits = backbone.project(head(memory)).float()
         return draw(logits, temperature)
     mask = torch.ones_like(ids, dtype=torch.bool)
+    if anchor_first:
+        final = memory[:, len(head.cfg.layers) - 1, -1]
+        ids[:, 0] = draw(backbone.project(final).float(), temperature)
+        mask[:, 0] = False
+    masked_length = length - int(anchor_first)
     steps = head.cfg.diffusion_steps if steps is None else steps
     if steps <= 0:
         raise ValueError("steps must be positive")
@@ -164,7 +169,7 @@ def sample_block(head, backbone, memory, temperature=0.0, steps=None):
         proposals = draw(logits, temperature)
         confidence = logits.softmax(-1).gather(-1, proposals[..., None]).squeeze(-1)
         confidence = confidence.masked_fill(~mask, -float("inf"))
-        remaining = math.ceil(length * (1 - (step + 1) / steps))
+        remaining = math.ceil(masked_length * (1 - (step + 1) / steps))
         to_commit = (mask.sum(-1) - remaining).clamp(min=0)
         rank = confidence.argsort(-1, descending=True).argsort(-1)
         commit = mask & (rank < to_commit[:, None])

@@ -18,8 +18,10 @@ The shared-output head failed memorization; position-specific outputs reached
 99.5% training-token accuracy. A residual readout improved first-token quality.
 Expansion attempt data-repaired-01 stopped before training on a uniqueness
 audit. The parent pool had 75 duplicate windows and one train/validation overlap.
-The corrected data-repaired-02 comparison is running with training cleanup and
-unchanged held-out tensors. Forty local tests pass.
+The corrected data-repaired-02 comparison completed with zero exact split
+overlaps and unchanged held-out tensors: 12k/49k losses 6.00/5.74. Quality remains
+poor. The 196k size and a final-layer-only control are running; saved-head
+anchor inference is being evaluated separately. Forty-one local tests pass.
 
 Remaining:
 - Next proposed bracket: 12,288 versus 49,152 windows, 2k/4k/8k updates.

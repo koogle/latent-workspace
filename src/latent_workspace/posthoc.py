@@ -1,0 +1,49 @@
+"""Read-only validation of saved study heads, including known-first-token drafting."""
+
+import hashlib
+import json
+from pathlib import Path
+
+import torch
+
+from .backbone import FrozenBackbone
+from .config import Config
+from .evaluate import evaluate, generate
+from .models import BlockHead
+from .train import write_json
+
+
+def evaluate_study(request, output):
+    source = Path(request.study_parent)
+    study = json.loads((source / "study.json").read_text())
+    if not study.get("completed"):
+        raise ValueError("posthoc evaluation requires a completed study")
+    cfg = Config(**study["config"])
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    backbone = FrozenBackbone(cfg, device)
+    saved = torch.load(source / "corpus.pt", weights_only=True)
+    validation = saved["tensors"]["validation"]
+    report = {"source_run": str(source), "test_status": "sealed", "heads": {}}
+    for size in study["curves"]:
+        checkpoint_path = source / f"size-{size}.pt"
+        state = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
+        head = BlockHead(backbone.hidden_size, cfg, state["variant"]).to(device)
+        head.load_state_dict(state["head"])
+        result = {
+            "step": state["step"],
+            "checkpoint_sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+            "domains": {},
+            "anchored_samples": {},
+        }
+        for domain, (a, b) in saved["metadata"]["domain_ranges"]["validation"].items():
+            result["domains"][domain] = evaluate(
+                head, backbone, validation[a:b], cfg, device, anchor_diagnostics=True
+            )
+            prefix = validation[a : a + 1, : cfg.context_length].to(device)
+            result["anchored_samples"][domain] = backbone.tokenizer.decode(
+                generate(head, backbone, prefix, max_new_tokens=24, anchor_first=True)
+            )
+        report["heads"][size] = result
+    Path(output).mkdir(parents=True, exist_ok=True)
+    write_json(Path(output) / "posthoc.json", report)
+    return report

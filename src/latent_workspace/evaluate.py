@@ -12,7 +12,7 @@ def sync(device):
 
 
 @torch.no_grad()
-def evaluate(head, backbone, data, cfg, device):
+def evaluate(head, backbone, data, cfg, device, *, anchor_diagnostics=False):
     head.eval()
     backbone.conditioning = head.condition
     nll = torch.zeros(cfg.block_size, device=device)
@@ -21,6 +21,7 @@ def evaluate(head, backbone, data, cfg, device):
     generated_accuracy = torch.zeros_like(nll)
     per_example = []
     prefix_agreement = []
+    anchored_agreement = []
     for rows in data.split(cfg.batch_size):
         rows = rows.to(device)
         prefix, target = rows[:, : cfg.context_length], rows[:, cfg.context_length :]
@@ -35,6 +36,12 @@ def evaluate(head, backbone, data, cfg, device):
         prefix_agreement.extend(
             (proposed == teacher_choices).long().cumprod(-1).sum(-1).cpu().tolist()
         )
+        if anchor_diagnostics and head.kind == "diffusion":
+            anchored = sample_block(head, backbone, memory, anchor_first=True)
+            expected = backbone.teacher_logits(prefix, anchored).argmax(-1)
+            anchored_agreement.extend(
+                (anchored == expected).long().cumprod(-1).sum(-1).cpu().tolist()
+            )
         generated_accuracy += generated_hits.sum(0)
         generated_exact += generated_hits.all(-1).sum().item()
         nll += ce.sum(0)
@@ -43,7 +50,7 @@ def evaluate(head, backbone, data, cfg, device):
         count += len(rows)
         per_example.extend(ce.mean(-1).cpu().tolist())
     values = torch.tensor(per_example)
-    return {
+    result = {
         "nll": float(nll.sum() / (count * cfg.block_size)),
         "nll_by_position": (nll / count).tolist(),
         "accuracy_by_position": (accuracy / count).tolist(),
@@ -59,6 +66,19 @@ def evaluate(head, backbone, data, cfg, device):
         "example_mean_nll": per_example,
         "nll_standard_error": float(values.std(unbiased=True) / count**0.5) if count > 1 else None,
     }
+    if anchored_agreement:
+        result["anchored_qwen_prefix_agreement"] = sum(anchored_agreement) / count
+        result["anchored_new_draft_agreement"] = (
+            sum(max(0, n - 1) for n in anchored_agreement) / count
+        )
+        result["anchored_full_block_agreement"] = (
+            sum(n == cfg.block_size for n in anchored_agreement) / count
+        )
+        result["anchored_prefix_lengths"] = anchored_agreement
+        result["anchor_note"] = (
+            "One token supplied by Qwen, then three drafted tokens; not four newly drafted tokens. Same trained checkpoint, changed inference policy only."
+        )
+    return result
 
 
 @torch.no_grad()
@@ -79,14 +99,14 @@ def teacher_baseline(backbone, data, cfg, device):
 
 
 @torch.no_grad()
-def generate(head, backbone, prefix, max_new_tokens=32, temperature=0.0):
+def generate(head, backbone, prefix, max_new_tokens=32, temperature=0.0, anchor_first=False):
     head.eval()
     backbone.conditioning = head.condition
     memory, cache = backbone.encode(prefix)
     generated = []
     eos = backbone.tokenizer.eos_token_id
     while len(generated) < max_new_tokens:
-        block = sample_block(head, backbone, memory, temperature)[0]
+        block = sample_block(head, backbone, memory, temperature, anchor_first=anchor_first)[0]
         tokens = block.tolist()[: max_new_tokens - len(generated)]
         if eos in tokens:
             generated.extend(tokens[: tokens.index(eos) + 1])

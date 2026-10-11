@@ -119,3 +119,23 @@ Both new sizes share this cleaned nested pool. The corrected collector reserves
 held-out windows first and checks window-level duplicates in addition to groups
 and document/source hashes. Near-duplicate and pretraining contamination remain
 outside this exact-match audit.
+
+The corrected run's audit confirms the overlapping validation window had nine
+training copies. Cleanup removes those nine plus 67 other duplicate rows (76
+rows total). The original 96-window checkpoint predicts the same token at all
+four positions on 100% of training examples, directly confirming position collapse.
+
+The cleaned 12k/49k comparison completed: 8k-update NLL 6.001/5.738; Qwen greedy
+prefix agreement 0.760/0.901 tokens out of four. The paired domain-stratified
+source-group bootstrap gives larger-minus-smaller NLL -0.263 [-0.402, -0.133],
+conditional on this single seed and small validation set. This supports checking
+196,608 windows, not declaring the decoder useful. The next run retains the same
+architecture, model, corpus revisions, and held-out tensors. Feature caching now
+stores only the residual planes consumed by this head and avoids whole-pool copies;
+it preserves training tensors and arithmetic while reducing host memory use.
+
+A separate final-layer-only control tests whether intermediate conditioning is
+responsible for poor loss. Saved-head inference also tests a Qwen-provided first
+token followed by three drafted tokens, inspired by the known-token anchor in
+[DFlash §4](https://arxiv.org/html/2602.06036v2). This is reported separately from
+four newly drafted tokens and does not introduce a verification service.

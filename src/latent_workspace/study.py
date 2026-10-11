@@ -154,12 +154,21 @@ def run_study(cfg, output, on_checkpoint=None):
     persist()
     memories = {}
     for split in ("train", "validation"):
-        chunks = []
+        destination = None
+        offset = 0
         for rows in data[split].split(cfg.batch_size):
-            chunks.append(backbone.encode(rows[:, : cfg.context_length].to(device))[0].cpu())
+            features = backbone.encode(rows[:, : cfg.context_length].to(device))[0].cpu()
+            if cfg.variants[0].split(":")[1] in ("multi", "final", "all", "best"):
+                features = features[:, : len(cfg.layers)]
+            if destination is None:
+                destination = torch.empty(
+                    (len(data[split]), *features.shape[1:]), dtype=features.dtype
+                )
+            destination[offset : offset + len(rows)].copy_(features)
+            offset += len(rows)
             if time.monotonic() - start > cfg.max_seconds:
                 raise TimeoutError("data study budget exhausted extracting features")
-        memories[split] = torch.cat(chunks)
+        memories[split] = destination
     subsets = nested_indices(
         metadata["domain_ranges"]["train"], cfg.study_sizes, cfg.seed, priority
     )
@@ -170,7 +179,7 @@ def run_study(cfg, output, on_checkpoint=None):
         optimizer = torch.optim.AdamW(head.parameters(), lr=cfg.learning_rate, weight_decay=0.01)
         sampler = torch.Generator().manual_seed(cfg.seed)
         selected = data["train"][subset]
-        memory = memories["train"][subset]
+        memory = memories["train"]
         per_domain = size // len(DOMAINS)
         diagnostic_indices = torch.cat(
             [
@@ -199,7 +208,7 @@ def run_study(cfg, output, on_checkpoint=None):
             loss, _, mask = loss_and_logits(
                 head,
                 backbone,
-                memory[index].to(device),
+                memory[subset[index]].to(device),
                 selected[index, cfg.context_length :].to(device),
             )
             if not torch.isfinite(loss):
@@ -212,7 +221,7 @@ def run_study(cfg, output, on_checkpoint=None):
                 train_metric = cached_metrics(
                     head,
                     backbone,
-                    memory[diagnostic_indices],
+                    memory[subset[diagnostic_indices]],
                     selected[diagnostic_indices, cfg.context_length :],
                     cfg,
                     device,
