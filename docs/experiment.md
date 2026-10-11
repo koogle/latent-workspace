@@ -60,3 +60,9 @@ Warm latency includes prefix encoding and committed-block cache updates. Do not
 infer efficiency without matched output quality. Cached features accelerate
 training; those savings do not imply faster generation. Repeat promising runs
 across seeds and report paired differences before expanding the budget.
+
+`selected_layers` optionally restricts the `multi`, `attention_multi` and `jspace`
+conditions to a subset of extracted `layers`. Empty means all extracted layers.
+Generation metrics also report greedy iterative block accuracy separately from
+all-masked one-shot accuracy. Generation latency computes J-lens readouts only
+for the J-space condition, not for raw-state comparisons.

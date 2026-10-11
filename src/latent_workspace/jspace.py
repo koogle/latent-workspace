@@ -4,6 +4,7 @@ Estimator follows anthropics/jacobian-lens (Apache-2.0), fitting.py, reference
 581d398613e5602a5af361e1c34d3a92ea82ba8e. This independent implementation consumes
 training token IDs directly and uses one-based post-block residual indices.
 """
+
 import time
 
 import torch
@@ -17,11 +18,12 @@ def fit_jacobians(backbone, prefixes, *, deadline):
     sources = cfg.layers[:-1]
     sums = {i: torch.zeros(hidden, hidden) for i in sources}
     counts = 0
-    for ids in prefixes[:cfg.jspace_prompts]:
+    for ids in prefixes[: cfg.jspace_prompts]:
         if time.monotonic() > deadline:
             raise TimeoutError("time budget exhausted fitting J-lens")
         captures, hooks = {}, []
-        def capture(index):
+
+        def capture(index, captures=captures):
             def hook(module, args, output):
                 value = output[0] if isinstance(output, tuple) else output
                 if index == min(sources):
@@ -29,13 +31,17 @@ def fit_jacobians(backbone, prefixes, *, deadline):
                     output = (value, *output[1:]) if isinstance(output, tuple) else value
                 captures[index] = value
                 return output
-            return hook
+
+            return hook  # noqa: B023 - created and registered within this iteration
+
         try:
             for i in cfg.layers:
                 hooks.append(model.layers[i - 1].register_forward_hook(capture(i)))
             batch = cfg.jspace_dim_batch
             with torch.enable_grad():
-                model(ids[None].expand(batch, -1).to(next(model.parameters()).device), use_cache=False)
+                model(
+                    ids[None].expand(batch, -1).to(next(model.parameters()).device), use_cache=False
+                )
                 final = captures[cfg.layers[-1]]
                 # Reference excludes the first 16 and last position.
                 valid = slice(16, ids.numel() - 1)
@@ -48,12 +54,18 @@ def fit_jacobians(backbone, prefixes, *, deadline):
                     cotangent = torch.zeros_like(final)
                     for row in range(n):
                         cotangent[row, valid, start + row] = 1
-                    grads = torch.autograd.grad(final, [captures[i] for i in sources],
-                        grad_outputs=cotangent, retain_graph=start + batch < hidden)
+                    grads = torch.autograd.grad(
+                        final,
+                        [captures[i] for i in sources],
+                        grad_outputs=cotangent,
+                        retain_graph=start + batch < hidden,
+                    )
                     for i, grad in zip(sources, grads):
-                        sums[i][start:start + n] += grad[:n, valid].float().mean(1).cpu()
+                        sums[i][start : start + n] += grad[:n, valid].float().mean(1).cpu()
             counts += 1
-            print(f"J-lens calibration {counts}/{min(len(prefixes), cfg.jspace_prompts)}", flush=True)
+            print(
+                f"J-lens calibration {counts}/{min(len(prefixes), cfg.jspace_prompts)}", flush=True
+            )
         finally:
             for hook in hooks:
                 hook.remove()

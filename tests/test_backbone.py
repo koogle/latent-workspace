@@ -1,0 +1,94 @@
+from types import SimpleNamespace
+
+import torch
+from transformers import Qwen2Config, Qwen2ForCausalLM
+
+from latent_workspace.backbone import FrozenBackbone
+from latent_workspace.config import Config
+from latent_workspace.jspace import fit_jacobians, readout
+
+
+def tiny_backbone():
+    cfg = Config(
+        layers=(1, 2),
+        context_length=24,
+        memory_tokens=3,
+        jspace_prompts=1,
+        jspace_dim_batch=4,
+        jspace_top_k=5,
+    )
+    backbone = FrozenBackbone.__new__(FrozenBackbone)
+    torch.nn.Module.__init__(backbone)
+    backbone.cfg = cfg
+    backbone.model = (
+        Qwen2ForCausalLM(
+            Qwen2Config(
+                vocab_size=31,
+                hidden_size=8,
+                intermediate_size=16,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+                max_position_embeddings=128,
+            )
+        )
+        .eval()
+        .requires_grad_(False)
+    )
+    backbone.hidden_size = 8
+    backbone.jacobians = None
+    backbone.tokenizer = SimpleNamespace(eos_token_id=30)
+    return backbone
+
+
+def test_actual_qwen_hooks_and_kv_cache_agree():
+    backbone = tiny_backbone()
+    prefix = torch.randint(31, (1, 24))
+    next_block = torch.randint(31, (1, 4))
+    memory, cache = backbone.encode(prefix)
+    incremental, _ = backbone.encode(next_block, past_key_values=cache)
+    full, _ = backbone.encode(torch.cat([prefix, next_block], -1))
+    assert memory.shape == (1, 4, 3, 8)
+    torch.testing.assert_close(full, incremental, atol=1e-5, rtol=1e-5)
+    assert not memory.requires_grad
+    assert len(backbone.model.model.layers[0]._forward_hooks) == 0
+
+
+def test_exact_jacobian_matches_direct_autograd():
+    import time
+
+    backbone = tiny_backbone()
+    prefix = torch.randint(31, (1, 24))
+    fitted = fit_jacobians(backbone, prefix, deadline=time.monotonic() + 60)
+    values = {}
+
+    def first(module, args, output):
+        h = output[0].detach().requires_grad_(True)
+        values[1] = h
+        return (h, *output[1:])
+
+    def last(module, args, output):
+        values[2] = output[0]
+
+    handles = [
+        backbone.model.model.layers[0].register_forward_hook(first),
+        backbone.model.model.layers[1].register_forward_hook(last),
+    ]
+    try:
+        backbone.model.model(prefix, use_cache=False)
+        expected = []
+        for d in range(8):
+            grad = torch.autograd.grad(values[2][:, 16:-1, d].sum(), values[1], retain_graph=True)[
+                0
+            ]
+            expected.append(grad[0, 16:-1].mean(0))
+    finally:
+        for h in handles:
+            h.remove()
+    torch.testing.assert_close(fitted[0], torch.stack(expected), atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(fitted[1], torch.eye(8))
+    backbone.jacobians = fitted
+    memory, _ = backbone.encode(prefix)
+    assert memory.shape == (1, 6, 3, 8)
+    assert torch.isfinite(readout(backbone, memory[:, :2])).all()
+    assert all(p.grad is None for p in backbone.parameters())

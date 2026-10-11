@@ -28,11 +28,18 @@ def write_json(path, value):
 
 
 def checkpoint(path, head, optimizer, step, cfg, backbone, generator):
-    payload = {"head": head.state_dict(), "optimizer": optimizer.state_dict(),
-               "step": step, "config": cfg.to_dict(), "variant": head.variant,
-               "model_revision": backbone.revision, "jacobians": backbone.jacobians,
-               "rng": torch.get_rng_state(), "sampler_rng": generator.get_state(),
-               "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []}
+    payload = {
+        "head": head.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "step": step,
+        "config": cfg.to_dict(),
+        "variant": head.variant,
+        "model_revision": backbone.revision,
+        "jacobians": backbone.jacobians,
+        "rng": torch.get_rng_state(),
+        "sampler_rng": generator.get_state(),
+        "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+    }
     tmp = path.with_suffix(".tmp")
     torch.save(payload, tmp)
     tmp.replace(path)
@@ -58,20 +65,27 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
             raise ValueError("resume config differs from saved config")
     train, valid, data_info = load_data(cfg, backbone.tokenizer)
     cfg.dataset_revision = data_info["dataset_revision"]
-    manifest = {"config": cfg.to_dict(), "model_revision": backbone.revision,
-                "data": data_info, "device": device, "torch": torch.__version__,
-                "gpu": torch.cuda.get_device_name() if device == "cuda" else None}
+    manifest = {
+        "config": cfg.to_dict(),
+        "model_revision": backbone.revision,
+        "data": data_info,
+        "device": device,
+        "torch": torch.__version__,
+        "gpu": torch.cuda.get_device_name() if device == "cuda" else None,
+    }
     write_json(output / "manifest.json", manifest)
     if on_checkpoint:
         on_checkpoint()
     if any(v.endswith(":jspace") for v in cfg.variants):
         from .jspace import fit_jacobians
+
         lens_path = output / "jacobians.pt"
         if resume and lens_path.exists():
             backbone.jacobians = torch.load(lens_path, weights_only=True)
         else:
-            backbone.jacobians = fit_jacobians(backbone, train[:, :cfg.context_length],
-                                              deadline=started + cfg.max_seconds)
+            backbone.jacobians = fit_jacobians(
+                backbone, train[:, : cfg.context_length], deadline=started + cfg.max_seconds
+            )
             torch.save(backbone.jacobians, lens_path)
         if on_checkpoint:
             on_checkpoint()
@@ -82,7 +96,7 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
     else:
         chunks = []
         for batch in train.split(cfg.batch_size):
-            memory, _ = backbone.encode(batch[:, :cfg.context_length].to(device))
+            memory, _ = backbone.encode(batch[:, : cfg.context_length].to(device))
             chunks.append(memory.cpu())
             if time.monotonic() - started > cfg.max_seconds:
                 raise TimeoutError("time budget exhausted during extraction")
@@ -118,7 +132,7 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
             head.train()
             indices = torch.randint(len(train), (cfg.batch_size,), generator=sampler)
             memory = cache[indices].to(device)
-            target = train[indices, cfg.context_length:].to(device)
+            target = train[indices, cfg.context_length :].to(device)
             optimizer.zero_grad(set_to_none=True)
             loss, _, _ = loss_and_logits(head, backbone, memory, target)
             if not torch.isfinite(loss):
@@ -132,27 +146,51 @@ def run(cfg, output, *, resume=False, on_checkpoint=None):
                 checkpoint(path, head, optimizer, step, cfg, backbone, sampler)
                 if on_checkpoint:
                     on_checkpoint()
-                print(json.dumps({"variant": variant, "step": step,
-                                  "loss": sum(losses[-cfg.eval_every:]) / min(len(losses), cfg.eval_every)}), flush=True)
+                print(
+                    json.dumps(
+                        {
+                            "variant": variant,
+                            "step": step,
+                            "loss": sum(losses[-cfg.eval_every :])
+                            / min(len(losses), cfg.eval_every),
+                        }
+                    ),
+                    flush=True,
+                )
         sync(device)
         training_seconds = time.perf_counter() - train_start
         checkpoint(path, head, optimizer, step, cfg, backbone, sampler)
-        result = {"parameters": sum(p.numel() for p in head.parameters() if p.requires_grad),
-                  "steps": step, "completed": step == cfg.steps,
-                  "context_token_exposures": step * cfg.batch_size * cfg.context_length,
-                  "target_token_exposures": step * cfg.batch_size * cfg.block_size,
-                  "training_seconds_this_session": training_seconds,
-                  "steps_per_second_this_session": (step - initial_step) / max(training_seconds, 1e-9),
-                  "initial": initial, "held_out": evaluate(head, backbone, valid, cfg, device)}
+        result = {
+            "parameters": sum(p.numel() for p in head.parameters() if p.requires_grad),
+            "steps": step,
+            "completed": step == cfg.steps,
+            "context_token_exposures": step * cfg.batch_size * cfg.context_length,
+            "target_token_exposures": step * cfg.batch_size * cfg.block_size,
+            "training_seconds_this_session": training_seconds,
+            "steps_per_second_this_session": (step - initial_step) / max(training_seconds, 1e-9),
+            "initial": initial,
+            "held_out": evaluate(head, backbone, valid, cfg, device),
+        }
         # Only one head at a time, no concurrent timing or models in memory.
-        result["latency"] = benchmark(head, backbone, valid[:1, :cfg.context_length].to(device), tokens=16)
+        result["latency"] = benchmark(
+            head, backbone, valid[:1, : cfg.context_length].to(device), tokens=16
+        )
         report["variants"][variant] = result
         report["elapsed_seconds"] = time.monotonic() - started
         write_json(output / "results.json", report)
         if on_checkpoint:
             on_checkpoint()
-        print(json.dumps({"variant": variant, "nll": result["held_out"]["nll"],
-                          "parameters": result["parameters"], "steps": step}), flush=True)
+        print(
+            json.dumps(
+                {
+                    "variant": variant,
+                    "nll": result["held_out"]["nll"],
+                    "parameters": result["parameters"],
+                    "steps": step,
+                }
+            ),
+            flush=True,
+        )
         del optimizer, head
         if device == "cuda":
             torch.cuda.empty_cache()

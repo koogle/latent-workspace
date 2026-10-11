@@ -19,12 +19,15 @@ def main():
     args = parser.parse_args()
     if args.command == "train":
         from .train import run
+
         print(json.dumps(run(Config.load(args.config), args.output, resume=args.resume), indent=2))
     else:
         import torch
+
         from .backbone import FrozenBackbone
         from .evaluate import generate
         from .models import BlockHead
+
         state = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
         cfg = Config(**state["config"]).validate()
         cfg.model_revision = state["model_revision"]

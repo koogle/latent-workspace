@@ -1,4 +1,5 @@
 """Trainable heads; frozen Qwen embedding and output weights stay external."""
+
 import math
 
 import torch
@@ -15,8 +16,9 @@ class Workspace(nn.Module):
         self.slots = nn.Parameter(torch.randn(cfg.slots, cfg.width) * 0.02)
         self.attend = nn.MultiheadAttention(cfg.width, cfg.heads, batch_first=True)
         self.norm = nn.LayerNorm(cfg.width)
-        self.ff = nn.Sequential(nn.Linear(cfg.width, cfg.width * 4), nn.GELU(),
-                                nn.Linear(cfg.width * 4, cfg.width))
+        self.ff = nn.Sequential(
+            nn.Linear(cfg.width, cfg.width * 4), nn.GELU(), nn.Linear(cfg.width * 4, cfg.width)
+        )
 
     def forward(self, memory):
         # [batch, depth, context tail, hidden], all strictly before the target.
@@ -38,19 +40,21 @@ class BlockHead(nn.Module):
         self.out_norm = nn.LayerNorm(hidden)
         self.out = nn.Linear(cfg.width, hidden)
         if self.kind == "probe":
-            self.probe = nn.Sequential(nn.Linear(hidden, cfg.width), nn.GELU(),
-                                       nn.Linear(cfg.width, cfg.width), nn.GELU())
+            self.probe = nn.Sequential(
+                nn.Linear(hidden, cfg.width), nn.GELU(), nn.Linear(cfg.width, cfg.width), nn.GELU()
+            )
             return
         self.workspace = Workspace(hidden, cfg)
         self.token_project = nn.Linear(hidden, cfg.width)
         self.mask = nn.Parameter(torch.randn(cfg.width) * 0.02)
-        self.time = nn.Sequential(nn.Linear(1, cfg.width), nn.SiLU(),
-                                  nn.Linear(cfg.width, cfg.width))
-        layer = nn.TransformerDecoderLayer(cfg.width, cfg.heads, cfg.width * 4,
-                                           dropout=0, batch_first=True, norm_first=True)
+        self.time = nn.Sequential(
+            nn.Linear(1, cfg.width), nn.SiLU(), nn.Linear(cfg.width, cfg.width)
+        )
+        layer = nn.TransformerDecoderLayer(
+            cfg.width, cfg.heads, cfg.width * 4, dropout=0, batch_first=True, norm_first=True
+        )
         self.decoder = nn.TransformerDecoder(layer, cfg.decoder_layers)
         # Identical capacity across conditioning ablations.
-
 
     def forward(self, memory, token_embeddings=None, masked=None, noise=None):
         b = memory.shape[0]
@@ -59,20 +63,23 @@ class BlockHead(nn.Module):
             x = self.probe(memory[:, index, -1].float())[:, None] + self.position
         else:
             depth = len(self.cfg.layers)
+            selected = [
+                self.cfg.layers.index(i) for i in (self.cfg.selected_layers or self.cfg.layers)
+            ]
             if self.condition == "final":
-                memory = memory[:, depth - 1:depth]
+                memory = memory[:, depth - 1 : depth]
             elif self.condition == "multi":
-                memory = memory[:, :depth]
+                memory = memory[:, selected]
             elif self.condition == "attention_multi":
-                memory = memory[:, depth:2 * depth]
+                memory = memory[:, [i + depth for i in selected]]
             elif self.condition == "jspace":
-                memory = memory[:, 2 * depth:]
+                memory = memory[:, [i + 2 * depth for i in selected]]
             elif self.condition.startswith("layer"):
                 index = self.cfg.layers.index(int(self.condition[5:]))
-                memory = memory[:, index:index + 1]
+                memory = memory[:, index : index + 1]
             elif self.condition.startswith("attention"):
                 index = depth + self.cfg.layers.index(int(self.condition[9:]))
-                memory = memory[:, index:index + 1]
+                memory = memory[:, index : index + 1]
             slots = self.workspace(memory)
             x = self.position.unsqueeze(0).expand(b, -1, -1)
             if self.kind != "parallel":

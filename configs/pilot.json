@@ -1,0 +1,8 @@
+{
+  "train_examples": 8192,
+  "eval_examples": 256,
+  "steps": 1500,
+  "eval_every": 250,
+  "jspace_prompts": 100,
+  "max_seconds": 3300
+}
