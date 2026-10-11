@@ -1,0 +1,50 @@
+# Latent Workspace — Repository Context
+
+## Product and scope
+
+Read README.md, decisions.md, OPEN_WORK.md and docs/knowledge/INDEX.md at session
+start. This is a standalone research project, unrelated to Age of Agents.
+User direction, 2026-10-11: use an already trained small Qwen model, freeze its
+weights, and test block generation conditioned on J-space, hidden states from
+individual attention/transformer blocks, and selected combinations. Collaborative
+generation and native backbone pretraining are outside the first experiment.
+
+## Architecture and invariants
+
+- Python/PyTorch; **uv** owns dependency resolution, commands and `uv.lock`.
+- Qwen2.5-0.5B shares tokenizer, frozen token embeddings and output weights across
+  experiments. Train only the block decoder and conditioning modules.
+- Prefix extraction must never see target tokens. Split documents before windows;
+  calibrate the J-lens on training prefixes only, never held-out data.
+- Distinguish residual-stream post-block states from self-attention outputs.
+- Preserve paper references, immutable model/data revisions, configuration,
+  random seeds, measurements and uncertainty. Do not call a logit lens J-space.
+- A smoke run does not validate a hypothesis or generation quality. Report
+  actual target-token and context-token exposures separately.
+- Modal uses dedicated app `latent-workspace-qwen` and volumes. Keep reservations
+  fail-closed, jobs bounded, and credentials out of code, logs and Git.
+
+## Workflow
+
+Work directly on main; **push regularly** to the private project repository.
+Direct commits to main are authorized. Keep changes scoped, readable and portable.
+Use `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and
+`git diff --check` before a verified checkpoint. GPU changes require a bounded
+Modal smoke run when access is available. Review for leakage, incorrect layer
+indices, autograd/freeze errors, irreproducible resumes and misleading metrics.
+Record blocked or unexecuted checks honestly. No game build/deployment applies.
+
+## Documentation as project context
+
+Use [.agents/skills/project-documentation/SKILL.md](.agents/skills/project-documentation/SKILL.md)
+for implementation, debugging, planning, system interaction and documentation.
+Follow **consult → work → learn/update → continue**. Consult relevant guides
+before changes and reconcile them after durable findings, steering, milestones,
+and before commits/pushes/handoff. Keep guides focused, indexed and source-linked.
+
+README.md owns summary/setup/references; decisions.md concise choices;
+OPEN_WORK.md current tasks/blockers; docs/experiment.md the experiment contract;
+docs/operations.md run procedures; results/ measured evidence. Preserve unresolved
+work. Label proposals, implemented behavior and executed verification distinctly.
+Never store secrets or raw conversation dumps. Documentation updates within the
+authorized work do not require separate approval.
