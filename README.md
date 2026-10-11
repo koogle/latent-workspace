@@ -8,10 +8,13 @@ No backbone pretraining or collaborative proposal module.
 
 See the [DFlash baseline protocol](docs/dflash-baseline.md) for the paper/code
 comparison, data contract and predeclared evaluation. The implementation is a compact
-Qwen2 adaptation, not a full paper reproduction. The initial 1000-update pilot did
-not produce useful drafting. A longer fit of the same baseline is running; its
-training diagnostic improves sharply while validation remains poor. No useful
-drafter or speedup is established. See [current work](OPEN_WORK.md).
+Qwen2 adaptation, not a full paper reproduction. The [completed 21000-update fit](results/dflash-findings.md)
+memorizes the 380-response training corpus but fails to generalize: best validation
+acceptance is only 0.284 new tokens / 7. FP32 verified output matches on three checked
+prompts, but generation is slower than Qwen alone. Broader, better-sampled training
+data is the next priority; no useful fast drafter is established.
+
+![DFlash-style fitting and validation curves](results/dflash-fit-01.png)
 
 ## Development
 
@@ -28,6 +31,9 @@ results are persisted. A smoke test establishes plumbing, not model quality.
 
 ## Research references
 
+- Chen et al., [DFlash: Block Diffusion for Flash Speculative Decoding](https://arxiv.org/abs/2602.06036),
+  [official code](https://github.com/z-lab/dflash). Current baseline reference;
+  stochastic verification and the paper's speedup results are not reproduced.
 - Gurnee et al. (2026), [Verbalizable Representations Form a Global Workspace in
   Language Models](https://transformer-circuits.pub/2026/workspace/index.html),
   [arXiv:2607.15495](https://arxiv.org/abs/2607.15495).
@@ -52,10 +58,6 @@ The initial WikiText pilot did not produce useful generation. The subsequent
 from optimization exposure. Its original pool had an exact-window overlap;
 clean follow-up runs removed it and preserved held-out data identities.
 
-Additional reference: Chen et al., [DFlash: Block Diffusion for Flash Speculative
-Decoding](https://arxiv.org/abs/2602.06036), [official code](https://github.com/z-lab/dflash).
-The new baseline implements a greedy verifier; stochastic verification and the paper's lossless speedup results are not reproduced.
-
 The [first measured data-budget curves](results/data-study-01.md) are available:
 more data improved validation loss, but sample generations remain degenerate.
 No sufficient training budget or useful drafter quality is established yet.
@@ -76,7 +78,7 @@ paired uncertainty and actual continuations. Test was withheld during training
 and selection, then evaluated once; it is no longer an untouched holdout for
 future adaptive work.
 
-## Trained checkpoint
+## Historical conditioning checkpoint
 
 The all-layer Qwen2.5 diffusion head is saved on Modal and downloaded locally at
 `artifacts/conditioning-all-best.pt`. Its checksum matches the frozen test head.
@@ -92,7 +94,7 @@ uv run latent-workspace generate --checkpoint artifacts/conditioning-all-best.pt
 Checkpoint files reference pinned pretrained Qwen weights; they do not bundle
 those weights. See [current limitations and remaining work](OPEN_WORK.md).
 
-## Reading the training curves
+## Reading the historical window-training curves
 
 One **window** is a 128-token prefix and the following four target tokens. The
 four-token generation block stays fixed. Curve labels such as 500/1000/2000/4000

@@ -126,7 +126,7 @@ timing is not a benchmark. Target weights are loaded from the pinned Hugging Fac
 revision; the checkpoint stores the draft model, not another copy of Qwen.
 
 
-## Executed pilot and current continuation
+## Executed pilot and fitting continuation
 
 The pilot reached 1000 updates: training-diagnostic NLL 7.747, validation NLL 7.820,
 and only 0.145 accepted new tokens / 7. This is an underfitting observation on a tiny
@@ -142,8 +142,8 @@ the CLI and future rollout checks. This does not make FP32 performance a BF16 sp
 claim, or prove bitwise parity for every possible prompt. Failures are retained in
 reports; a failed output comparison suppresses the speedup ratio.
 
-`dflash-fit-01` continues exactly the same draft/optimizer/data for up to 20000 more
-updates, with checkpoints every 250 and a new warmup/cosine cycle. It is a fitting
+`dflash-fit-01` completed 20000 more updates on exactly the same draft/optimizer/data,
+with checkpoints every 250 and a new warmup/cosine cycle. It is a fitting
 study of the SAME baseline, not another model comparison. The long worker has an
 actual 3600-second bound and reserves $5 under the original authorized upper cap.
 No new response generation, hidden-state objective, layer selection or test access.
@@ -156,7 +156,7 @@ A separate readout audit found a norm-scale difference but an essentially zero
 analytical CE lower bound. It does not establish normalization as the cause; no
 readout change was introduced on that evidence.
 
-After training finishes, evaluate both validation-selected and final checkpoints on
+The completed post-training audit evaluated both validation-selected and final checkpoints on
 every training response (up to eight fixed anchors/response, not every possible
 anchor) and the same validation responses. This checks whether the 12-prompt
 training diagnostic is representative; it does not alter checkpoint selection.
@@ -165,3 +165,33 @@ The read-only diagnostic has a 360-second hard bound and $0.50 reservation.
 ```bash
 uv run modal run modal_dflash.py --verify-parent dflash-fit-01 --fit-audit --run-id dflash-fit-audit-01
 ```
+
+## Data limitations to address before a larger fit
+
+The current pilot takes the first eligible source rows and, for prose/code, the
+first 128 tokens. Its one-prompt-per-group rule protects separation but does not
+provide broad continuation coverage. A retained
+[qualitative spot check](../results/dflash-corpus-spotcheck.json) includes a license
+header continuation and consecutively selected parliamentary translation prompts.
+76/127 code prompts begin with `#`; that simple heuristic does **not** classify
+all their continuations as boilerplate. The spot check is not a quality estimate.
+Qwen itself can produce poor translations: successful speculative verification
+preserves Qwen's outputs, not necessarily human translation quality.
+
+The next data preparation should use seeded source mixing, varied valid continuation
+positions for prose/code, explicit response-length/repetition audits, and more
+independent validation groups. Keep translation instructions/source intact and
+keep existing test groups quarantined. Archive actual usable response counts,
+unique target-token slots and repeated exposures separately. Expand response
+diversity with the same drafting architecture before representation ablations.
+These are follow-up requirements, **not implemented changes to the measured fit**.
+
+## Final measured status
+
+[Completed results and curves](../results/dflash-findings.md): all 21000 updates
+finished. The all-response audit found final train NLL 0.0052 / 6.9987 new matches,
+versus validation NLL 9.6334 / 0.2557 matches. Best validation acceptance was 0.2844
+at update 17000. FP32 rollout matched all three checked prompts, but 0.879–0.912x
+AR speed means slower generation. Full training fitting does not establish useful
+held-out drafting or a sufficient data budget. The next priority is the data work
+above; representation experiments remain deferred. All new test prompts stay sealed.

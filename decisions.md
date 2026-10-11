@@ -55,3 +55,9 @@
 - 2026-10-11: BF16 GPU AR/block parity failed due to a reproduced fixed-input target
   argmax flip. Use FP32 arithmetic as the correctness reference; retain the failure,
   do not label the initial BF16 rollout successful or claim a validated speedup.
+
+- 2026-10-11: Completed the same-baseline DFlash fitting study through 21000 updates.
+  Full-response training fits nearly perfectly; held-out acceptance stays below
+  0.3 new tokens / 7. FP32 verified output matches three prompts but is slower than
+  AR. Prioritize broader, better-sampled target responses with fixed architecture;
+  defer representation experiments. See results/dflash-findings.md.

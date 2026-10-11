@@ -3,40 +3,39 @@
 Private repo: koogle/latent-workspace, main; direct commits and regular pushes authorized.
 
 Current priority: [DFlash-style Qwen drafting baseline](docs/dflash-baseline.md).
-Representation experiments are deferred. The aligned baseline has one known anchor
-plus seven masked proposals, target-generated labels, fixed feature K/V injection,
-random-anchor packed training and cached greedy verification.
+Representation experiments are deferred. One known anchor plus seven masked proposals,
+target-generated labels, fixed feature K/V injection, random-anchor packed training
+and cached greedy verification are implemented. No useful fast drafter is established.
 
-Executed: 380 usable train responses, 47 fresh validation responses and 48 reserved
-test prompts (no test responses/metrics). The initial 1000-update fit reached only
-0.145 accepted NEW tokens / 7; training-sample NLL 7.747, validation 7.820. It is
-not useful drafting. The original BF16 rollout check failed. A fixed-input GPU
-replay isolated a BF16 AR/block argmax flip (0.0625 top-two margin, 0.25 logit
-change); FP32 arithmetic matched all three diagnostic prompts. The CLI and future
-rollout checks now use FP32 on upcast stored BF16 weights. BF16 parity and any
-speedup remain unestablished.
+[Completed fitting study and curves](results/dflash-findings.md): 21000 updates on
+380 usable mixed-domain training responses (20661 unique response-token slots),
+47 fresh validation responses; 48 test prompts remain ungenerated and unevaluated.
+All-response audit: final training NLL 0.0052 and 6.9987 consecutive new matches / 7,
+versus validation NLL 9.6334 and 0.2557 matches. The validation-selected checkpoint
+at update 17000 reaches only 0.2844 validation matches. Tiny-corpus memorization,
+not useful generalization. The same architecture/data were retained throughout.
 
-`dflash-fit-01` is running: continue the SAME model/AdamW/RNG and exact teacher
-cache for up to 20000 additional updates (goal 21000), with a declared new cosine
-cycle. No architecture, feature-layer, mask-policy or data changes. This addresses
-underfitting before further study. At update 11000 the 12-prompt training diagnostic
-reached 6.015 consecutive new matches / 7 and NLL 0.360, versus validation 0.185
-and NLL 9.078. The emerging finding is memorization without useful generalization;
-final results and an all-training-response audit are pending. A readout-scale audit found 1.13 versus target
-7.12 RMS, but its analytical CE bound is essentially zero: it does NOT establish
-a loss floor or justify calling normalization the cause.
+Actual FP32 verified rollout matched ordinary Qwen on all three measured prompts,
+but achieved only 0.879–0.912x AR speed. Three prompts are a pipeline check, not a
+benchmark. Original BF16 parity failed due to a reproduced fixed-input argmax flip;
+BF16 parity/speed remain unestablished. Training/cached teacher features use BF16.
+The selected checkpoint is downloaded and checksum-verified at
+`artifacts/dflash-fit-best.pt`; both best/latest checkpoints remain on Modal.
 
-69 local tests pass, including exact next-update restoration of the new trainer's
-optimizer/sampler. The real checkpoint CLI ran on CPU. Original pilot and diagnostic
-artifacts are retained; new continuation results are pending. `dflash-pilot-01`
-failed during remote import and was explicitly stopped; its reservation remains.
-The user-authorized original allocation range was $200–$500. The initial conservative
-$200 ceiling has now been raised to that original $500 upper bound for the drafting-
-first continuation; cumulative reservations are $205, not a confirmed bill.
+69 local tests pass; actual GPU training, full-response fitting audit and FP32
+rollout checks completed. Source/checkpoint/data identities are archived. Failed
+initial remote import and BF16 checks remain documented, not relabeled successful.
+The original user budget was $200–$500. Current ceiling $500; cumulative conservative
+reservations $205.50, not a confirmed bill. No drafting GPU job remains active.
 
-Pending: finish/interpret the optimization continuation; then determine the target-
-response data scale from fitting versus held-out acceptance. Do not claim a working
-fast drafter or resume layer/J-space experiments based only on decreasing loss.
+Next: improve target-response coverage while holding the architecture fixed.
+The pilot takes first eligible source rows and first-token prose/code prefixes;
+a spot check includes license-header continuations and consecutive parliamentary
+translation prompts. Use seeded source mixing, varied valid continuation positions,
+response-length/repetition audits and more independent validation groups before
+larger fitting/data-size runs. Keep existing test groups quarantined. These changes
+are pending, not executed. The sufficient corpus size is still unknown; do not
+resume layer/J-space experiments based on memorization or decreasing training loss.
 
 The [trained conditioning study is complete](results/conditioning-findings.md).
 Executed: 96 residual/attention probes across two seeds; nine Qwen2.5-0.5B decoder

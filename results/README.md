@@ -1,5 +1,8 @@
 # Experiment evidence
 
+Current priority: [DFlash-style fitting results and curves](dflash-findings.md).
+The baseline fits its tiny training corpus but fails to generalize; no speedup.
+
 ## Verified initial checks (2026-10-11)
 
 - `smoke-l40s-01.json`: seven variants, 10 updates each, 64 training windows,
