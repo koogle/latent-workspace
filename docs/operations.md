@@ -72,3 +72,19 @@ Training and generation can use CPU for correctness checks; reported benchmarks
 come from Modal GPUs. The tests verify real tiny-Qwen hooks and cached prefix
 updates, exact Jacobians against direct autograd, masked-target isolation, frozen
 weights, 4/8/16-token sampling, and exact next-update checkpoint restoration.
+
+
+### Data-study continuation
+
+`study_resume` points to a completed study directory and is normally paired with
+`study_parent` pointing there. It restores model, optimizer, sampling and CPU/CUDA
+RNG state, verifies critical training configuration and ordered training/held-out
+tensors, and carries previous observations forward. It records both source hashes;
+unlike the original pilot resume it permits code changes that pass these checks.
+An exact two-update versus one-plus-resume regression test covers the CPU path.
+Best validation heads are saved separately from resumable final checkpoints.
+Use a new run ID for each continuation to preserve the parent's artifacts.
+
+Large raw study reports may be gzip-compressed in results; this is lossless JSON
+archival. `scripts/plot_data_scaling.py` reads either JSON or JSON.gz and verifies
+matching held-out hashes/groups and critical architecture fields before plotting.

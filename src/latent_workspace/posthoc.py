@@ -26,11 +26,15 @@ def evaluate_study(request, output):
     report = {"source_run": str(source), "test_status": "sealed", "heads": {}}
     for size in study["curves"]:
         checkpoint_path = source / f"size-{size}.pt"
+        best_path = source / f"size-{size}-best.pt"
+        if best_path.exists():
+            checkpoint_path = best_path
         state = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
         head = BlockHead(backbone.hidden_size, cfg, state["variant"]).to(device)
         head.load_state_dict(state["head"])
         result = {
             "step": state["step"],
+            "checkpoint": checkpoint_path.name,
             "checkpoint_sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
             "domains": {},
             "anchored_samples": {},
@@ -43,6 +47,19 @@ def evaluate_study(request, output):
             result["anchored_samples"][domain] = backbone.tokenizer.decode(
                 generate(head, backbone, prefix, max_new_tokens=24, anchor_first=True)
             )
+        with torch.no_grad():
+            embeddings = backbone.embed(validation[:, cfg.context_length :].to(device)).float()
+            projected = head.token_project(head.token_norm(embeddings))
+            result["input_scales"] = {
+                "embedding_rms": float(embeddings.square().mean().sqrt()),
+                "projected_token_variation_rms": float(
+                    (projected - projected.mean((0, 1), keepdim=True)).square().mean().sqrt()
+                ),
+                "time_embedding_rms_at_half_masked": float(
+                    head.time(torch.tensor([[0.5]], device=device)).square().mean().sqrt()
+                ),
+                "position_embedding_rms": float(head.position.square().mean().sqrt()),
+            }
         report["heads"][size] = result
     Path(output).mkdir(parents=True, exist_ok=True)
     write_json(Path(output) / "posthoc.json", report)

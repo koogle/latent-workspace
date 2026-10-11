@@ -111,7 +111,10 @@ def test_frozen_readout_matches_teacher_and_padding_cache():
 
 
 @pytest.mark.parametrize("position_readout", [False, True])
-def test_residual_drafter_initializes_to_pretrained_logits_and_learns(position_readout):
+@pytest.mark.parametrize("normalize_token_inputs", [False, True])
+def test_residual_drafter_initializes_to_pretrained_logits_and_learns(
+    position_readout, normalize_token_inputs
+):
     from dataclasses import replace
 
     from test_core import tiny_config
@@ -119,7 +122,12 @@ def test_residual_drafter_initializes_to_pretrained_logits_and_learns(position_r
     from latent_workspace.models import BlockHead, loss_and_logits
 
     backbone = tiny_backbone()
-    cfg = replace(tiny_config(), residual_readout=True, position_readout=position_readout)
+    cfg = replace(
+        tiny_config(),
+        residual_readout=True,
+        position_readout=position_readout,
+        normalize_token_inputs=normalize_token_inputs,
+    )
     backbone.cfg = cfg
     prefix = torch.randint(31, (2, 24))
     target = torch.randint(31, (2, 4))
@@ -151,6 +159,9 @@ def test_known_first_token_drafting_preserves_qwen_choice():
     head = BlockHead(8, cfg, "diffusion:multi")
     expected = backbone.model(prefix).logits[:, -1].argmax(-1)
     for rounds in (1, 2, 4):
-        proposed = sample_block(head, backbone, memory, steps=rounds, anchor_first=True)
-        torch.testing.assert_close(proposed[:, 0], expected)
-        assert proposed.shape == (2, 4)
+        for ordered in (False, True):
+            proposed = sample_block(
+                head, backbone, memory, steps=rounds, anchor_first=True, left_to_right=ordered
+            )
+            torch.testing.assert_close(proposed[:, 0], expected)
+            assert proposed.shape == (2, 4)

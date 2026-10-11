@@ -54,6 +54,11 @@ class BlockHead(nn.Module):
             return
         self.workspace = Workspace(hidden, cfg)
         self.token_project = nn.Linear(hidden, cfg.width)
+        self.token_norm = (
+            nn.RMSNorm(hidden, eps=1e-6, elementwise_affine=False)
+            if cfg.normalize_token_inputs
+            else nn.Identity()
+        )
         self.mask = nn.Parameter(torch.randn(cfg.width) * 0.02)
         self.time = nn.Sequential(
             nn.Linear(1, cfg.width), nn.SiLU(), nn.Linear(cfg.width, cfg.width)
@@ -101,7 +106,7 @@ class BlockHead(nn.Module):
             if self.kind != "parallel":
                 if token_embeddings is None or masked is None or noise is None:
                     raise ValueError("diffusion needs corrupted tokens, mask, and noise level")
-                visible = self.token_project(token_embeddings.float())
+                visible = self.token_project(self.token_norm(token_embeddings.float()))
                 x = x + torch.where(masked[..., None], self.mask, visible)
                 x = x + self.time(noise[:, None].float())[:, None]
             for _ in range(self.cfg.refinement_rounds):
@@ -147,7 +152,9 @@ def loss_and_logits(head, backbone, memory, target, *, all_masked=False):
 
 
 @torch.no_grad()
-def sample_block(head, backbone, memory, temperature=0.0, steps=None, anchor_first=False):
+def sample_block(
+    head, backbone, memory, temperature=0.0, steps=None, anchor_first=False, left_to_right=False
+):
     b = memory.shape[0]
     length = head.cfg.block_size
     ids = torch.zeros((b, length), dtype=torch.long, device=memory.device)
@@ -171,7 +178,11 @@ def sample_block(head, backbone, memory, temperature=0.0, steps=None, anchor_fir
         confidence = confidence.masked_fill(~mask, -float("inf"))
         remaining = math.ceil(masked_length * (1 - (step + 1) / steps))
         to_commit = (mask.sum(-1) - remaining).clamp(min=0)
-        rank = confidence.argsort(-1, descending=True).argsort(-1)
+        if left_to_right:
+            order = torch.arange(length, device=memory.device)[None].expand(b, -1)
+            rank = order.masked_fill(~mask, length).argsort(-1).argsort(-1)
+        else:
+            rank = confidence.argsort(-1, descending=True).argsort(-1)
         commit = mask & (rank < to_commit[:, None])
         ids = torch.where(commit, proposals, ids)
         mask &= ~commit

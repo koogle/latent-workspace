@@ -55,3 +55,9 @@ This prototype does not reproduce its verifier or lossless speedup claims.
 The [first measured data-budget curves](results/data-study-01.md) are available:
 more data improved validation loss, but sample generations remain degenerate.
 No sufficient training budget or useful drafter quality is established yet.
+
+
+The [clean follow-up curves](results/data-scaling.png) now compare up to 196,608
+mixed-domain windows. Best seed-42 validation NLL is 5.264, but consecutive Qwen
+agreement is only 1.06/4 tokens: useful block generation is still unestablished.
+See [current work](OPEN_WORK.md) for repeated seeds and optimization continuation.

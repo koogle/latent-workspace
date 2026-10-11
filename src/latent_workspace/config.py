@@ -7,9 +7,11 @@ from pathlib import Path
 class Config:
     model: str = "Qwen/Qwen2.5-0.5B"
     model_revision: str = "main"
+    normalize_token_inputs: bool = False
     position_readout: bool = False
     residual_readout: bool = False
     study_eval_only: bool = False
+    study_resume: str = ""
     study_reference: str = ""
     study_parent: str = ""
     study_sizes: tuple[int, ...] = ()

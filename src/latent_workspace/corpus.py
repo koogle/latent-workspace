@@ -285,3 +285,21 @@ def extend_frozen_corpus(base, candidate, target_size):
         "note": "Held-out tensors unchanged; historical training subset may change to remove leakage/duplicates.",
     }
     return {**old, "train": torch.stack(rows)}, metadata, priority
+
+
+def audit_windows(data):
+    """Fail before training if any exact window duplicates or split overlaps remain."""
+    sets = {split: set(map(tuple, rows.tolist())) for split, rows in data.items()}
+    counts = {
+        split: {"total": len(data[split]), "distinct": len(values)}
+        for split, values in sets.items()
+    }
+    overlaps = {
+        f"{a}/{b}": len(sets[a] & sets[b])
+        for a, b in (("train", "validation"), ("train", "test"), ("validation", "test"))
+    }
+    if any(c["total"] != c["distinct"] for c in counts.values()) or any(overlaps.values()):
+        raise ValueError(
+            "window audit failed: duplicates or held-out overlap; clean/expand the parent corpus first"
+        )
+    return {"counts": counts, "overlaps": overlaps}

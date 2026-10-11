@@ -22,6 +22,8 @@ def evaluate(head, backbone, data, cfg, device, *, anchor_diagnostics=False):
     per_example = []
     prefix_agreement = []
     anchored_agreement = []
+    ordered_agreement = []
+    chain_nll = torch.zeros(cfg.block_size, device=device)
     for rows in data.split(cfg.batch_size):
         rows = rows.to(device)
         prefix, target = rows[:, : cfg.context_length], rows[:, cfg.context_length :]
@@ -42,6 +44,26 @@ def evaluate(head, backbone, data, cfg, device, *, anchor_diagnostics=False):
             anchored_agreement.extend(
                 (anchored == expected).long().cumprod(-1).sum(-1).cpu().tolist()
             )
+            ordered = sample_block(head, backbone, memory, anchor_first=True, left_to_right=True)
+            expected = backbone.teacher_logits(prefix, ordered).argmax(-1)
+            ordered_agreement.extend(
+                (ordered == expected).long().cumprod(-1).sum(-1).cpu().tolist()
+            )
+            for position in range(cfg.block_size):
+                masked = (
+                    torch.arange(cfg.block_size, device=device)[None].expand(len(rows), -1)
+                    >= position
+                )
+                features = head(
+                    memory,
+                    backbone.embed(target.masked_fill(masked, 0)),
+                    masked,
+                    masked.float().mean(-1),
+                )
+                conditional_logits = backbone.project(features)[:, position].float()
+                chain_nll[position] += F.cross_entropy(
+                    conditional_logits, target[:, position], reduction="sum"
+                )
         generated_accuracy += generated_hits.sum(0)
         generated_exact += generated_hits.all(-1).sum().item()
         nll += ce.sum(0)
@@ -75,6 +97,14 @@ def evaluate(head, backbone, data, cfg, device, *, anchor_diagnostics=False):
             sum(n == cfg.block_size for n in anchored_agreement) / count
         )
         result["anchored_prefix_lengths"] = anchored_agreement
+        result["anchored_left_to_right_prefix_agreement"] = sum(ordered_agreement) / count
+        result["anchored_left_to_right_new_draft_agreement"] = (
+            sum(max(0, n - 1) for n in ordered_agreement) / count
+        )
+        result["teacher_forced_drafter_nll_by_position"] = (chain_nll / count).tolist()
+        result["teacher_forced_drafter_note"] = (
+            "Earlier reference tokens visible, later tokens masked; comparable information to teacher-forced Qwen, not all-masked prediction or actual generation quality."
+        )
         result["anchor_note"] = (
             "One token supplied by Qwen, then three drafted tokens; not four newly drafted tokens. Same trained checkpoint, changed inference policy only."
         )

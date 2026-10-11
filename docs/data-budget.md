@@ -74,7 +74,7 @@ repeats Qwen's next-token distribution at every block position; its first positi
 is especially useful for detecting loss of pretrained predictive information.
 
 `study_parent` reloads the parent corpus and pins its model/source revisions.
-Expansion retains every original training row, appends distinct windows, excludes
+Expansion retains clean original training rows, appends distinct windows, excludes
 held-out groups/content hashes and carries validation/test tensors unchanged.
 The original full-pool training order is retained as the nested subset's prefix.
 The proposed 12k/49k, 8k-update expansion is configured but gated on diagnosis.
@@ -139,3 +139,42 @@ responsible for poor loss. Saved-head inference also tests a Qwen-provided first
 token followed by three drafted tokens, inspired by the known-token anchor in
 [DFlash §4](https://arxiv.org/html/2602.06036v2). This is reported separately from
 four newly drafted tokens and does not introduce a verification service.
+
+## Clean size and optimization follow-up
+
+Completed seed-42 controls (same frozen validation tensors):
+
+| Windows | Batch | Best observed update | Best validation NLL |
+| ---: | ---: | ---: | ---: |
+| 12,288 | 16 | 4,000 | 5.921 |
+| 49,152 | 16 | 8,000 | 5.738 |
+| 196,608 | 16 | 8,000 | 5.690 |
+| 49,152 | 128 | 2,000 | 5.511 |
+| 196,608 | 128 | 4,000 | 5.264 |
+
+[Combined curves](../results/data-scaling.png) distinguish unique corpus size,
+optimization and generation agreement. Batch-size comparisons change token
+exposures as well as gradient variance; they do not isolate batch size alone.
+At 4k updates, batch 128 has 2.048M target slots and 1,279,980 actual masked
+labels. The 196k pool has 786,432 distinct target slots; context tokens are not
+labels. At batch 16 / 8k updates only 128k windows are sampled with replacement,
+so not every available window was necessarily observed.
+
+49k overfits by 4k updates (NLL 5.670). Comparing each run's best checkpoint gives
+a 0.247 NLL advantage to 196k; comparing final checkpoints alone exaggerates it.
+Even the larger run agrees with Qwen for only 1.057 consecutive tokens out of
+four. Quality is not solved. These losses are all-masked marginals, not sequence
+perplexity and not directly comparable with autoregressive teacher-forced loss.
+
+Negative diagnostic controls: final-layer-only conditioning reached NLL 6.002
+at batch 16 / 4k, versus multi-layer 5.816. Parameter-free token-input RMSNorm
+reached 5.540 at batch 128 / 2k versus 5.511 without it. Normalization remains
+off by default. Known first-token anchoring and left-to-right unmasking of the
+49k final checkpoint gave only about 0.3–0.5 additional consecutive Qwen matches;
+teacher-forcing earlier block labels also left large later-position losses.
+These checks do not support solving the problem with decoding order alone.
+
+Current bounded runs extend the 196k batch-128 checkpoint to 8k/16k updates and
+repeat 49k/196k through 4k with seeds 43/44. Roughly 200k windows is a candidate
+pilot pool, not an established minimum or a production-quality recommendation.
+All comparisons remain exploratory on 192 validation windows and sealed test.

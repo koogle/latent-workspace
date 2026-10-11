@@ -74,7 +74,7 @@ def test_study_runs_all_sizes_without_evaluating_test(tmp_path, monkeypatch):
     data = {
         "train": torch.randint(31, (12, 28)),
         "validation": torch.randint(31, (6, 28)),
-        "test": torch.full((6, 28), 99),
+        "test": torch.arange(6 * 28).reshape(6, 28) + 99,
     }
     ranges = {
         split: {d: [i * len(rows) // 3, (i + 1) * len(rows) // 3] for i, d in enumerate(DOMAINS)}
@@ -198,3 +198,55 @@ def test_expansion_cleans_legacy_duplicate_and_held_out_windows():
     assert audit["parent_training_cleanup"]["duplicate_windows_removed"] == 1
     assert audit["parent_training_cleanup"]["held_out_overlapping_windows_removed"] == 1
     assert data["validation"] is old["validation"]
+
+
+def test_study_continuation_matches_uninterrupted_updates(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from test_backbone import tiny_backbone
+    from test_core import tiny_config
+
+    from latent_workspace import study
+
+    cfg = replace(
+        tiny_config(),
+        corpus="mixed",
+        train_examples=12,
+        eval_examples=6,
+        test_examples=6,
+        study_sizes=(12,),
+        study_checkpoints=(1, 2),
+        variants=("diffusion:multi",),
+        batch_size=2,
+        max_seconds=60,
+    )
+    data = {
+        "train": torch.randint(31, (12, 28)),
+        "validation": torch.randint(31, (6, 28)),
+        "test": torch.arange(6 * 28).reshape(6, 28) + 99,
+    }
+    ranges = {
+        s: {d: [i * len(rows) // 3, (i + 1) * len(rows) // 3] for i, d in enumerate(DOMAINS)}
+        for s, rows in data.items()
+    }
+
+    def factory(config, device):
+        backbone = tiny_backbone()
+        backbone.cfg, backbone.revision = config, "test"
+        backbone.tokenizer = SimpleNamespace(eos_token_id=30, decode=lambda ids: str(ids))
+        return backbone
+
+    monkeypatch.setattr(study, "FrozenBackbone", factory)
+    monkeypatch.setattr(study, "prepare", lambda *a: (data, {"domain_ranges": ranges}))
+    study.run_study(replace(cfg), tmp_path / "direct")
+    study.run_study(replace(cfg, study_checkpoints=(1,)), tmp_path / "parent")
+    result = study.run_study(
+        replace(cfg, study_parent=str(tmp_path / "parent"), study_resume=str(tmp_path / "parent")),
+        tmp_path / "resumed",
+    )
+    direct = torch.load(tmp_path / "direct/size-12.pt", weights_only=True)
+    resumed = torch.load(tmp_path / "resumed/size-12.pt", weights_only=True)
+    assert result["completed"] and resumed["step"] == 2
+    for key in direct["head"]:
+        torch.testing.assert_close(direct["head"][key], resumed["head"][key], atol=0, rtol=0)

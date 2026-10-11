@@ -1,7 +1,9 @@
 """Data-size/optimization learning curves; test metrics stay sealed."""
 
+import copy
 import hashlib
 import json
+import shutil
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 import torch
 
 from .backbone import FrozenBackbone
-from .corpus import DOMAINS, extend_frozen_corpus, prepare
+from .corpus import DOMAINS, audit_windows, extend_frozen_corpus, prepare
 from .evaluate import evaluate, generate, repeated_next_token_baseline, teacher_baseline
 from .models import BlockHead, loss_and_logits
 from .scan import cached_metrics
@@ -116,6 +118,7 @@ def run_study(cfg, output, on_checkpoint=None):
                 raise ValueError("parent held-out sizes must be preserved")
     else:
         data, metadata = prepare(cfg, backbone.tokenizer)
+    window_audit = audit_windows(data)
     atomic_save(output / "corpus.pt", {"tensors": data, "metadata": metadata})
     source_hash = hashlib.sha256()
     for source in sorted(Path(__file__).parent.glob("*.py")):
@@ -123,6 +126,7 @@ def run_study(cfg, output, on_checkpoint=None):
     result = {
         "config": cfg.to_dict(),
         "data": metadata,
+        "window_audit": window_audit,
         "source_sha256": source_hash.hexdigest(),
         "test_status": "sealed; no test losses or accuracy computed",
         "curves": {},
@@ -187,17 +191,82 @@ def run_study(cfg, output, on_checkpoint=None):
                 for i in range(len(DOMAINS))
             ]
         )
-        distinct_windows = len({tuple(row) for row in selected.tolist()})
+        if len(torch.unique(subset)) != size:
+            raise ValueError("duplicate subset indices")
+        distinct_windows = size
         masked_exposures = 0
         curve = {
             "training_windows": size,
+            "trainable_parameters": sum(p.numel() for p in head.parameters() if p.requires_grad),
             "unique_blocks": distinct_windows,
             "unique_target_token_slots": distinct_windows * cfg.block_size,
             "train_indices": subset.tolist(),
             "checkpoints": [],
         }
+        start_step = 0
+        if cfg.study_resume:
+            resume_path = Path(cfg.study_resume)
+            previous = json.loads((resume_path / "study.json").read_text())
+            previous_curve = previous["curves"][str(size)]
+            state = torch.load(
+                resume_path / f"size-{size}.pt", weights_only=True, map_location="cpu"
+            )
+            from .config import Config
+
+            old_cfg = Config(**state["config"])
+            critical = (
+                "model",
+                "model_revision",
+                "layers",
+                "selected_layers",
+                "block_size",
+                "context_length",
+                "memory_tokens",
+                "slots",
+                "width",
+                "heads",
+                "decoder_layers",
+                "refinement_rounds",
+                "diffusion_steps",
+                "batch_size",
+                "learning_rate",
+                "seed",
+                "variants",
+                "position_readout",
+                "residual_readout",
+                "normalize_token_inputs",
+            )
+            for key in critical:
+                if json.dumps(old_cfg.to_dict()[key]) != json.dumps(cfg.to_dict()[key]):
+                    raise ValueError(f"resume changes training configuration: {key}")
+            old_corpus = torch.load(resume_path / "corpus.pt", weights_only=True)
+            old_rows = old_corpus["tensors"]["train"][previous_curve["train_indices"]]
+            if not torch.equal(selected, old_rows):
+                raise ValueError("resume changes ordered training examples")
+            for split in ("validation", "test"):
+                if not torch.equal(data[split], old_corpus["tensors"][split]):
+                    raise ValueError("resume changes held-out tensors")
+            start_step = state["step"]
+            if max(cfg.study_checkpoints) <= start_step:
+                raise ValueError("resume must extend the update budget")
+            if previous_curve["checkpoints"][-1]["step"] != start_step:
+                raise ValueError("resume checkpoint/report step mismatch")
+            head.load_state_dict(state["head"])
+            optimizer.load_state_dict(state["optimizer"])
+            sampler.set_state(state["sampler_rng"])
+            torch.set_rng_state(state["rng"])
+            if state["cuda_rng"] and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(state["cuda_rng"])
+            curve = copy.deepcopy(previous_curve)
+            curve["resume_source"] = str(resume_path)
+            curve["resume_parent_source_sha256"] = previous["source_sha256"]
+            masked_exposures = curve["checkpoints"][-1]["masked_supervised_tokens_seen"]
+            best_path = resume_path / f"size-{size}-best.pt"
+            if best_path.exists():
+                shutil.copyfile(best_path, output / best_path.name)
+            del old_corpus, old_rows, state
         result["curves"][str(size)] = curve
-        for step in range(1, max(cfg.study_checkpoints) + 1):
+        for step in range(start_step + 1, max(cfg.study_checkpoints) + 1):
             if time.monotonic() - start > cfg.max_seconds:
                 result["stopped"] = "time budget; incomplete curves"
                 persist()
@@ -245,6 +314,20 @@ def run_study(cfg, output, on_checkpoint=None):
                     / len(DOMAINS),
                 }
                 curve["checkpoints"].append(row)
+                if row["macro_validation_nll"] < curve.get("best_validation_nll", float("inf")):
+                    curve["best_validation_nll"] = row["macro_validation_nll"]
+                    curve["best_step"] = step
+                    atomic_save(
+                        output / f"size-{size}-best.pt",
+                        {
+                            "head": head.state_dict(),
+                            "step": step,
+                            "config": cfg.to_dict(),
+                            "variant": head.variant,
+                            "model_revision": backbone.revision,
+                            "selection": "minimum macro validation NLL; no test access",
+                        },
+                    )
                 checkpoint(
                     output / f"size-{size}.pt", head, optimizer, step, cfg, backbone, sampler
                 )
