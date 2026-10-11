@@ -105,3 +105,17 @@ proposed block: only consecutive matching tokens before the first mismatch count
 This uses no reference continuation labels and is separate from ground-truth
 accuracy. It is an evaluation diagnostic, not a deployed verifier, speculative
 sampling correctness proof or measured end-to-end speed improvement.
+
+## Window-level audit correction
+
+The first expansion stopped before training because full-document deduplication
+left repeated context/target windows. The original 12,288-row pool contains 12,213
+distinct windows (75 duplicates), with one exact training/validation overlap and
+no training/test or validation/test overlaps. Historical validation results are
+exploratory and are marked accordingly. The corrected comparison preserves all
+held-out tensors but necessarily changes the training control: remove duplicates
+and the overlapping window, then fill the smaller balanced subset from clean data.
+Both new sizes share this cleaned nested pool. The corrected collector reserves
+held-out windows first and checks window-level duplicates in addition to groups
+and document/source hashes. Near-duplicate and pretraining contamination remain
+outside this exact-match audit.

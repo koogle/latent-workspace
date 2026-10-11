@@ -19,7 +19,7 @@ def test_balanced_splits_quarantine_duplicates():
             domain,
             split,
             domain + split,
-            "unique " + domain + split,
+            split + " " + domain + " unique content",
             "source " + split if domain == "translation" else "",
         )
         for split in SPLITS
@@ -123,10 +123,10 @@ def test_expansion_preserves_frozen_rows_and_subset_order():
 
     old, old_meta = corpus(2)
     fresh, fresh_meta = corpus(4)
-    data, meta, priority_ranges = extend_frozen_corpus(
+    data, meta, priority_maps = extend_frozen_corpus(
         {"tensors": old, "metadata": old_meta}, (fresh, fresh_meta), 12
     )
-    priority = {d: list(reversed(range(a, b))) for d, (a, b) in priority_ranges.items()}
+    priority = {d: list(reversed(list(mapping.values()))) for d, mapping in priority_maps.items()}
     subsets = nested_indices(meta["domain_ranges"]["train"], (6, 12), 42, priority)
     expected = torch.cat([old["train"][i * 2 : (i + 1) * 2].flip(0) for i in range(3)])
     torch.testing.assert_close(data["train"][subsets[6]], expected)
@@ -138,3 +138,63 @@ def test_expansion_preserves_frozen_rows_and_subset_order():
 
     with pytest.raises(ValueError, match="leaks"):
         extend_frozen_corpus({"tensors": old, "metadata": old_meta}, (fresh, fresh_meta), 12)
+
+
+def test_different_documents_with_same_windows_do_not_inflate_data_size():
+    # Full-document fingerprints differ, but their retained token windows match.
+    records = [
+        Record(
+            domain,
+            split,
+            domain + split + str(i),
+            f"{domain}{split} " * 16 + str(i),
+            f"source-{split}-{i}" if domain == "translation" else "",
+        )
+        for split in SPLITS
+        for domain in DOMAINS
+        for i in range(3)
+    ]
+    # Translation sources differ; only prose/code duplicates are relevant here.
+    import pytest
+
+    with pytest.raises(ValueError, match="insufficient disjoint"):
+        build(records, Tokenizer(), 8, 4, dict.fromkeys(SPLITS, 5))
+
+
+def test_expansion_cleans_legacy_duplicate_and_held_out_windows():
+    from latent_workspace.corpus import extend_frozen_corpus
+
+    def pack(rows, count):
+        data = {
+            "train": torch.tensor(rows),
+            "validation": torch.tensor([[20, 1]]),
+            "test": torch.tensor([[99, 1]]),
+        }
+        meta = {
+            "sources": {},
+            "domain_ranges": {
+                "train": {d: [i * count, (i + 1) * count] for i, d in enumerate(DOMAINS)}
+            },
+            "window_groups": {
+                "train": [f"train-{i}" for i in range(len(rows))],
+                "validation": ["valid"],
+                "test": ["test"],
+            },
+            "window_hashes": {
+                "train": [f"hash-{i}" for i in range(len(rows))],
+                "validation": ["valid-hash"],
+                "test": ["test-hash"],
+            },
+        }
+        return data, meta
+
+    old, meta = pack([[10, 1], [10, 1], [20, 1], [21, 1], [30, 1], [31, 1]], 2)
+    fresh = pack([[d * 10 + i, 1] for d in (1, 2, 3) for i in range(4)], 4)
+    data, audit, _ = extend_frozen_corpus({"tensors": old, "metadata": meta}, fresh, 9)
+    assert len(set(map(tuple, data["train"].tolist()))) == 9
+    assert not set(map(tuple, data["train"].tolist())) & set(
+        map(tuple, data["validation"].tolist())
+    )
+    assert audit["parent_training_cleanup"]["duplicate_windows_removed"] == 1
+    assert audit["parent_training_cleanup"]["held_out_overlapping_windows_removed"] == 1
+    assert data["validation"] is old["validation"]

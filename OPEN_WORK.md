@@ -16,7 +16,10 @@ Current follow-up: diagnose high absolute loss using 96-window memorization
 and a zero-training repeated-Qwen-distribution baseline before scaling further.
 The shared-output head failed memorization; position-specific outputs reached
 99.5% training-token accuracy. A residual readout improved first-token quality.
-The combined 12k/49k, 8k-update comparison is running on Modal.
+Expansion attempt data-repaired-01 stopped before training on a uniqueness
+audit. The parent pool had 75 duplicate windows and one train/validation overlap.
+The corrected data-repaired-02 comparison is running with training cleanup and
+unchanged held-out tensors. Forty local tests pass.
 
 Remaining:
 - Next proposed bracket: 12,288 versus 49,152 windows, 2k/4k/8k updates.

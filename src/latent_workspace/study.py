@@ -3,6 +3,7 @@
 import hashlib
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -89,15 +90,25 @@ def run_study(cfg, output, on_checkpoint=None):
         base = torch.load(parent_path / "corpus.pt", weights_only=True)
         if cfg.train_examples == len(base["tensors"]["train"]):
             data, metadata = base["tensors"], base["metadata"]
-            ranges = metadata["domain_ranges"]["train"]
+            maps = {
+                domain: {i: i for i in range(a, b)}
+                for domain, (a, b) in metadata["domain_ranges"]["train"].items()
+            }
         else:
-            candidate = prepare(cfg, backbone.tokenizer, base["metadata"])
-            data, metadata, ranges = extend_frozen_corpus(base, candidate, cfg.train_examples)
+            candidate_cfg = replace(
+                cfg, train_examples=cfg.train_examples + max(96, cfg.train_examples // 96 * 3)
+            )
+            candidate = prepare(candidate_cfg, backbone.tokenizer, base["metadata"])
+            atomic_save(
+                output / "candidate.pt", {"tensors": candidate[0], "metadata": candidate[1]}
+            )
+            data, metadata, maps = extend_frozen_corpus(base, candidate, cfg.train_examples)
         original_order = parent["curves"][str(len(base["tensors"]["train"]))]["train_indices"]
         priority = {}
-        for domain, (new_start, _) in ranges.items():
-            a, b = base["metadata"]["domain_ranges"]["train"][domain]
-            priority[domain] = [new_start + i - a for i in original_order if a <= i < b]
+        for domain, mapping in maps.items():
+            priority[domain] = list(
+                dict.fromkeys(mapping[i] for i in original_order if i in mapping)
+            )
         for split in ("validation", "test"):
             if len(data[split]) != getattr(
                 cfg, "eval_examples" if split == "validation" else "test_examples"
@@ -167,10 +178,12 @@ def run_study(cfg, output, on_checkpoint=None):
                 for i in range(len(DOMAINS))
             ]
         )
+        distinct_windows = len({tuple(row) for row in selected.tolist()})
         masked_exposures = 0
         curve = {
-            "unique_blocks": size,
-            "unique_target_token_slots": size * cfg.block_size,
+            "training_windows": size,
+            "unique_blocks": distinct_windows,
+            "unique_target_token_slots": distinct_windows * cfg.block_size,
             "train_indices": subset.tolist(),
             "checkpoints": [],
         }

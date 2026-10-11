@@ -1,5 +1,12 @@
 # data-position-memorize-01: initial data-budget study
 
+> **Corpus audit correction:** the parent training pool contained 75 duplicate windows
+> and one exact train/validation window overlap. These historical validation metrics
+> are exploratory. The follow-up cleans training while keeping held-out tensors fixed.
+> See [audit](data-study-01-window-audit.json). Tiny-set training-fit diagnostics remain
+> training measurements, not evidence of held-out quality.
+
+
 Completed: True. sealed; no test losses or accuracy computed.
 
 All rows use the same backbone, architecture and seed. NLL is all-masked

@@ -5,6 +5,7 @@ import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import islice
 
 import torch
 
@@ -35,6 +36,7 @@ class Record:
     group: str
     content: str
     source: str = ""
+    cached_windows: list | None = None
 
     @property
     def fingerprint(self):
@@ -44,6 +46,9 @@ class Record:
 
 
 def record_windows(record, tokenizer, context, block):
+    if record.cached_windows is not None:
+        yield from record.cached_windows
+        return
     if record.domain != "translation":
         ids = tokenizer.encode(record.content, add_special_tokens=False)
         for start in range(0, len(ids) - context - block + 1, context + block):
@@ -84,25 +89,34 @@ def build(records, tokenizer, context, block, limits, excluded_groups=(), exclud
                 duplicate_hashes.add(fingerprint)
             continue
         fingerprints[fingerprint] = key
-        from itertools import islice
-
         windows = list(islice(record_windows(record, tokenizer, context, block), 4))
         if windows:
             pools[key].append((record, windows))
             counts[key] += len(windows)
     tensors, ranges, groups, hashes = {}, {}, {}, {}
-    for split in SPLITS:
+    reserved_windows = set()
+    for split in ("test", "validation", "train"):
         rows, ranges[split], groups[split], hashes[split] = [], {}, [], []
         for domain in DOMAINS:
             start = len(rows)
+            seen_windows = set()
             for record, windows in pools[(split, domain)]:
                 if record.fingerprint in duplicate_hashes:
                     continue
                 remaining = limits[split] - (len(rows) - start)
                 if remaining <= 0:
                     break
-                chosen = windows[:remaining]
+                chosen = []
+                for window in windows:
+                    key = tuple(window)
+                    if key in seen_windows or key in reserved_windows:
+                        continue
+                    seen_windows.add(key)
+                    chosen.append(window)
+                    if len(chosen) >= remaining:
+                        break
                 rows.extend(chosen)
+                reserved_windows.update(map(tuple, chosen))
                 groups[split].extend([f"{domain}:{record.group}"] * len(chosen))
                 hashes[split].extend([record.fingerprint] * len(chosen))
             end = len(rows)
@@ -147,6 +161,7 @@ def prepare(cfg, tokenizer, frozen_metadata=None):
             repo, subset = SOURCES[domain]
             splits = ("train",) if domain == "code" else ("test", "validation", "train")
             for split in splits:
+                print(f"Collecting {domain}/{split} windows", flush=True)
                 rows = load_dataset(
                     repo, subset, split=split, revision=revisions[domain], streaming=True
                 )
@@ -154,6 +169,8 @@ def prepare(cfg, tokenizer, frozen_metadata=None):
                     rows = ({"text": text} for text in documents(rows))
                 counts = defaultdict(int)
                 for index, row in enumerate(rows):
+                    if index >= 100000:
+                        break
                     if domain == "code":
                         group = row["repo_name"]
                         partition = repository_split(group)
@@ -166,15 +183,21 @@ def prepare(cfg, tokenizer, frozen_metadata=None):
                     key = record.split
                     quota = limits[key] * 3
                     if counts[key] < quota:
-                        # Enough records, not just enough windows; caps prevent
-                        # a single huge code repository dominating a split.
-                        yield record
-                        counts[key] += 1
+                        record.cached_windows = list(
+                            islice(
+                                record_windows(
+                                    record, tokenizer, cfg.context_length, cfg.block_size
+                                ),
+                                4,
+                            )
+                        )
+                        if record.cached_windows:
+                            yield record
+                            counts[key] += len(record.cached_windows)
                     required = SPLITS if domain == "code" else (split,)
                     if all(counts[x] >= limits[x] * 3 for x in required):
                         break
-                    if index >= 100000:
-                        break
+                print(f"Collected {domain}/{split}: {dict(counts)} candidate windows", flush=True)
 
     excluded = frozen_metadata or {"window_groups": {}, "window_hashes": {}}
     tensors, metadata = build(
@@ -199,7 +222,7 @@ def prepare(cfg, tokenizer, frozen_metadata=None):
 
 
 def extend_frozen_corpus(base, candidate, target_size):
-    """Preserve held-out tensors and all previous training rows while adding data."""
+    """Keep held-out tensors fixed; retain clean old rows and add distinct windows."""
     import copy
 
     old, old_meta = base["tensors"], base["metadata"]
@@ -216,10 +239,14 @@ def extend_frozen_corpus(base, candidate, target_size):
     excluded_hashes = set(
         old_meta["window_hashes"]["validation"] + old_meta["window_hashes"]["test"]
     )
+    excluded_windows = {
+        tuple(row) for split in ("validation", "test") for row in old[split].tolist()
+    }
+    removed_duplicates, removed_overlaps = 0, 0
     for domain in DOMAINS:
         start = len(rows)
         a, b = old_meta["domain_ranges"]["train"][domain]
-        seen = set()
+        seen, priority[domain] = {}, {}
         for tensors, meta, bounds in (
             (old, old_meta, (a, b)),
             (fresh, fresh_meta, fresh_meta["domain_ranges"]["train"][domain]),
@@ -233,14 +260,28 @@ def extend_frozen_corpus(base, candidate, target_size):
                     raise ValueError("expansion leaks held-out records")
                 row = tensors["train"][index]
                 key = tuple(row.tolist())
-                if tensors is fresh and key in seen:
+                if key in excluded_windows:
+                    removed_overlaps += tensors is old
                     continue
-                seen.add(key)
+                if key in seen:
+                    if tensors is old:
+                        priority[domain][index] = seen[key]
+                        removed_duplicates += 1
+                    continue
+                seen[key] = len(rows)
+                if tensors is old:
+                    priority[domain][index] = len(rows)
                 rows.append(row)
                 metadata["window_groups"]["train"].append(group)
                 metadata["window_hashes"]["train"].append(fingerprint)
         if len(rows) - start != target_size // 3:
-            raise ValueError("insufficient unique expansion rows")
+            raise ValueError(
+                f"insufficient unique expansion rows for {domain}: {len(rows) - start}/{target_size // 3}"
+            )
         metadata["domain_ranges"]["train"][domain] = [start, len(rows)]
-        priority[domain] = [start, start + b - a]
+    metadata["parent_training_cleanup"] = {
+        "duplicate_windows_removed": removed_duplicates,
+        "held_out_overlapping_windows_removed": removed_overlaps,
+        "note": "Held-out tensors unchanged; historical training subset may change to remove leakage/duplicates.",
+    }
     return {**old, "train": torch.stack(rows)}, metadata, priority
