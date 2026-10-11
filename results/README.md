@@ -17,14 +17,26 @@ Both profiles are tiny single-container observations with timing noise and Pytho
 orchestration overhead. They support selecting L40S for this pilot, not a general
 hardware ranking or matched-quality speedup. The decoder is poorly trained here.
 
-## Pilot in progress
+## Completed exploratory pilot
 
 `pilot-l40s-01`: 21.63M-parameter decoder, 100 training-prefix J-lens calibration,
 selected layers 6/12/18, seven conditions, 750 updates × batch 8 each, 256-token
-contexts, four-token targets. Planned exposures: 1,536,000 context tokens and
+contexts, four-token targets. Actual exposures: 1,536,000 context tokens and
 24,000 target tokens per condition; 10,752,000 and 168,000 across seven conditions.
 These are repeated exposures; token windows are sampled from 4096 training
-examples. Pilot results and text samples will be added after completion.
+examples. The [measured report](pilot-l40s-01.md) shows repeated punctuation and poor
+held-out quality. This does not validate any conditioning hypothesis.
 
 Use `uv run python scripts/summarize.py results/RUN.json --output results/RUN.md`
 for a readable table. Raw JSON retains per-position and per-example metrics.
+
+## Mixed-domain data gate
+
+`mixed-smoke-01.json` completed on L40S with the updated output normalization,
+mixed prose/code/translation training and disjoint train/validation/test splits.
+All three paths (final, all extracted layers, J-lens) completed five updates;
+test metrics remain sealed. This is plumbing verification only.
+
+`data-study-01` compares nested data subsets at equal optimization checkpoints.
+Results will be published after the bounded run completes. See
+[protocol](../docs/data-budget.md); this study precedes any broad model sweep.
