@@ -1,9 +1,15 @@
 # Latent workspace block generation
 
-Research prototype: freeze **Qwen2.5-0.5B**, train a small decoder to generate
-four tokens jointly, and compare conditioning on an Anthropic-style J-lens
-readout, individual transformer/attention blocks, and selected combinations.
-No backbone pretraining or collaborative proposal module in this first phase.
+Current priority: build a **DFlash-style speculative drafter for frozen Qwen2.5-0.5B**
+that predicts useful multi-token blocks. Train on Qwen-generated continuations,
+condition on a known anchor, and verify proposals with Qwen. The original J-space,
+workspace and layer-selection experiments are deferred until this baseline works.
+No backbone pretraining or collaborative proposal module.
+
+See the [DFlash baseline protocol](docs/dflash-baseline.md) for the paper/code
+comparison, data contract and predeclared evaluation. The implementation is a compact
+Qwen2 adaptation, not a full paper reproduction. Local correctness tests pass;
+the first bounded Modal validation is in progress. No new quality or speedup claim.
 
 ## Development
 
@@ -46,7 +52,7 @@ clean follow-up runs removed it and preserved held-out data identities.
 
 Additional reference: Chen et al., [DFlash: Block Diffusion for Flash Speculative
 Decoding](https://arxiv.org/abs/2602.06036), [official code](https://github.com/z-lab/dflash).
-This prototype does not reproduce its verifier or lossless speedup claims.
+The new baseline implements a greedy verifier; stochastic verification and the paper's lossless speedup results are not reproduced.
 
 The [first measured data-budget curves](results/data-study-01.md) are available:
 more data improved validation loss, but sample generations remain degenerate.

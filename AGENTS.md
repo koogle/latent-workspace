@@ -9,6 +9,16 @@ weights, and test block generation conditioned on J-space, hidden states from
 individual attention/transformer blocks, and selected combinations. Collaborative
 generation and native backbone pretraining are outside the first experiment.
 
+## Current priority (2026-10-11)
+
+Build a credible **DFlash-style speculative drafter for frozen Qwen2.5-0.5B** before
+further representation experiments. See [baseline protocol](docs/dflash-baseline.md).
+Train on target-generated responses with random clean anchors and fully masked
+future blocks. Measure accepted NEW tokens beyond the supplied anchor, verified
+output correctness, and end-to-end latency. Defer J-space, workspace, hidden-state
+prediction and layer-selection/dropout ablations. Standard fixed target-feature
+conditioning is part of DFlash; it is not an auxiliary hidden-state generation task.
+
 ## Architecture and invariants
 
 - Python/PyTorch; **uv** owns dependency resolution, commands and `uv.lock`.

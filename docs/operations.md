@@ -95,3 +95,13 @@ representation planes (raw residual, attention, J-lens) for 196k windows. They
 retain the same bounded L40S reservation/timeout. Cross-backbone corpus reuse is
 opt-in and rejects changed source token IDs or base tokenization; it records the
 compatibility audit and parent model revision in the report.
+
+
+### DFlash baseline worker
+
+`uv run modal run modal_dflash.py --config configs/dflash-pilot.json --run-id dflash-pilot-01`
+uses a separate short worker (900-second actual timeout, no retries, one L40S).
+The same locked ledger reserves $1.25 for its full bound; old 3600-second jobs still
+reserve $5. Neither the cap nor existing reservations are reset. The worker shares
+the dedicated project volumes and locked uv image. See the baseline protocol for
+its data/evaluation gates and the distinction between a smoke run and useful drafting.

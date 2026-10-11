@@ -14,3 +14,5 @@ Training budget and learning-curve decisions: [Data sufficiency](../data-budget.
 Trained layer and J-lens comparisons: [Conditioning study](../conditioning-study.md).
 
 Small-set fitting and layer dropout/null controls: [Protocol](../small-data-controls.md).
+
+Current drafting-first priority: [DFlash baseline](../dflash-baseline.md).

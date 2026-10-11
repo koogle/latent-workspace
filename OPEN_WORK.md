@@ -2,6 +2,17 @@
 
 Private repo: koogle/latent-workspace, main; direct commits and regular pushes authorized.
 
+Current priority: [DFlash-style Qwen drafting baseline](docs/dflash-baseline.md).
+The user deferred representation experiments until useful multi-token drafting is
+established. Implemented target-generated responses, new held-out source groups,
+random-anchor packed training, fixed feature K/V injection, cache-aware greedy
+verification, and acceptance/latency metrics that exclude the supplied anchor.
+67 local tests pass. `dflash-pilot-01` is running on a hard-bounded 900-second L40S
+worker; its reservation is $1.25, preserving the existing $200 allocation cap.
+No successful training/quality/speed result is claimed yet. New trainer resume
+loading, larger response corpora, broad latency evaluation and test evaluation
+remain unexecuted. Historical layer/J-lens follow-ups below are deferred.
+
 The [trained conditioning study is complete](results/conditioning-findings.md).
 Executed: 96 residual/attention probes across two seeds; nine Qwen2.5-0.5B decoder
 conditions and two Qwen3-0.6B conditions at 4k updates each; one frozen-checkpoint

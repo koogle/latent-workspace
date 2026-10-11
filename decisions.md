@@ -36,3 +36,12 @@
   zero-content attention is effectively tied and 25% layer dropout gives no clear
   improvement. Tiny sets are fitting diagnostics, not replacements for the larger
   mixed-domain training pool. Preserve this negative result and the full curves.
+
+- 2026-10-11: User redirected the project to a DFlash-style drafting baseline before
+  further hidden-representation experiments. Use target-generated responses,
+  known-anchor blocks, one-pass prediction, and actual target verification. Count
+  only accepted new proposals, not the anchor. Keep fixed standard feature context;
+  defer workspace/J-space/layer ablations. Protocol: docs/dflash-baseline.md.
+- 2026-10-11: Add a genuinely shorter 900-second worker and reserve its full bound
+  at the existing $5/hour rate ($1.25). Preserve the $200 cap and all old reservations;
+  do not shorten a reservation while leaving a longer worker timeout in place.
